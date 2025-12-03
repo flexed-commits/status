@@ -181,7 +181,7 @@ client.on('ready', () => {
     updateStatus();
 
     // 2. Set the interval to run the update function every 60 seconds (1 minute)
-    setInterval(updateStatus, 60000); 
+    setInterval(updateStatus, 5000); 
 });
 
 // Start the bot
