@@ -136,13 +136,13 @@ async function updateStatus() {
             .setColor(0x808080) 
             .setTitle('👥 Staff Status Overview')
             .setAuthor({ 
-                name: config.author.name, 
-                iconURL: config.author.iconURL, 
-                url: config.author.url 
+                name: "👑 Shivam’s Discord", 
+                iconURL: "https://cdn.discordapp.com/icons/1349281907765936188/7f90f5ba832e7672d4f55eb0c6017813.png?size=4096", 
+                url: "https://discord.gg/ha7K8ngyex"
             })
             .addFields(
-                { name: '🟢 Available Staffs:', value: availableContent, inline: false },
-                { name: '🔴 Unavailable Staffs:', value: unavailableContent, inline: false }
+                { name: 'Available Staffs:', value: availableContent, inline: false },
+                { name: 'Unavailable Staffs:', value: unavailableContent, inline: false }
             )
             // Footer shows the time of the last update
             .setFooter({ text: 'Status last updated' })
