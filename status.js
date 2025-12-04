@@ -1,5 +1,3 @@
-// status.js - Staff Status and Availability Tracker
-
 // Load environment variables from .env file immediately
 // To run this code, first install dependencies: npm install discord.js dotenv
 // Then, create a .env file with your bot token: DISCORD_TOKEN=YOUR_SECRET_TOKEN
@@ -99,9 +97,6 @@ async function updateStatus() {
         const guild = channel.guild;
         if (!guild) return console.error('Error: Could not find the guild for the channel.');
 
-        // Ensure the bot has member data loaded for the guild
-        await guild.members.fetch(); 
-
         const availableStaffs = [];
         const unavailableStaffs = [];
 
@@ -122,7 +117,7 @@ async function updateStatus() {
                 if (status === 'online' || status === 'idle') {
                     availableStaffs.push(line);
                 } else {
-                    // 'dnd', 'offline', 'invisible', and any others are unavailable
+                    // 'dnd', 'offline', 'invisible' (as requested), and any others are unavailable
                     unavailableStaffs.push(line); 
                 }
             } catch (err) {
@@ -174,22 +169,20 @@ async function updateStatus() {
 // --- BOT EVENTS ---
 
 client.on('ready', () => {
-    // Note: Since index.js is also logging in, this bot should probably be run with a separate token 
-    // or as a second instance if you intend for both index.js and status.js to run.
     if (!config.token) {
         console.error('ERROR: DISCORD_TOKEN is missing. Check your .env file and environment variables.');
         // If the token is missing, destroy the client immediately
         return client.destroy(); 
     }
 
-    console.log(`Status Bot is logged in as ${client.user.tag}!`);
+    console.log(`Bot is logged in as ${client.user.tag}!`);
 
     // 1. Run the status update immediately on startup
     updateStatus();
 
-    // 2. Set the interval to run the update function every 5 seconds (5000ms)
-    // NOTE: For a real bot, a 60-second interval is more resource-friendly.
-    setInterval(updateStatus, 5000); 
+    // 2. Set the interval to run the update function every 5 seconds (5000 milliseconds)
+    // *** THIS IS THE CHANGED LINE ***
+    setInterval(updateStatus, **5000**); 
 });
 
 // Start the bot
