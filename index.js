@@ -1,190 +1,151 @@
-// Load environment variables from .env file immediately
-// To run this code, first install dependencies: npm install discord.js dotenv
-// Then, create a .env file with your bot token: DISCORD_TOKEN=YOUR_SECRET_TOKEN
-require('dotenv').config();
+// index.js
+import { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, codeBlock } from 'discord.js';
+import { handleInteraction } from './interactions.js'; // Import the interaction handler
 
-const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
+// --- Configuration ---
+const CHANNEL_ID = '1349304376967036960';
+const ABOUT_SHIVAM_ID = 'about_shivam_btn';
+const RULES_ID = 'rules_btn';
+const FAQS_ID = 'faqs_btn';
+const ROLE_INFO_ID = 'role_info_btn';
+const SELF_ROLES_ID = 'self_roles_btn';
+const VOLUNTEER_LIST_ID = 'volunteer_list_btn';
+const GRATITUDE_LIST_ID = 'gratitude_list_btn';
 
-// --- CONFIGURATION ---
-const config = {
-    // List of staff user IDs
-    staffIds: [
-        '1081876265683927080',
-        '1403084314819825787',
-        '1193415556402008169',
-        '1317831363474227251',
-        '1408294418695589929',
-        '1355792114818224178',
-        '1231563118455554119',
-        '1033399411130245190',
-        '1180098931280064562',
-        '1228377961569325107'
-    ],
-    // The channel where the status message will be posted
-    channelId: '1445693527274295378',
-    // Custom emojis provided by the user
-    emojis: {
-        offline: '<:offline:1445697413015666749>',
-        dnd: '<:dnd:1445697600446660668>',
-        online: '<a:Online:1445697846354509886>',
-        idle: '<:Idle:1445697974557609994>',
-        default: '⚫' // Fallback for unexpected statuses
-    },
-    // Author information for the embed
-    author: {
-        name: 'Server Name',
-        url: 'https://discord.gg/ha7K8ngyex',
-        iconURL: 'https://placehold.co/128x128/3a4049/ffffff?text=Icon' // REPLACE THIS
-    },
-    // SECURED: Reads the token from the environment variable (DISCORD_TOKEN in .env)
-    token: process.env.DISCORD_TOKEN 
-};
-
-// --- CLIENT SETUP ---
-
-// Client requires Presence and Guild Member Intents to read user status
+// --- Client Setup ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildPresences, // Required for status checks
-        GatewayIntentBits.GuildMembers,   // Required for fetching members
+        GatewayIntentBits.MessageContent,
     ],
-    partials: [Partials.Channel, Partials.Message]
+    partials: [Partials.Message, Partials.Channel],
 });
 
-// Global variable to store the ID of the status message for minute-by-minute editing.
-let statusMessageId = null; 
+// --- Initial Message Components ---
 
-/**
- * Maps the Discord status string to the custom emoji string.
- * This is updated to treat 'invisible' as 'offline' emoji.
- * @param {string} status - The raw status from Discord (online, idle, dnd, offline, invisible).
- * @returns {string} The corresponding custom emoji string.
- */
-function getEmoji(status) {
-    switch (status) {
-        case 'online':
-            return config.emojis.online;
-        case 'idle':
-            return config.emojis.idle;
-        case 'dnd':
-            return config.emojis.dnd; 
-        case 'offline':
-        case 'invisible': // <-- New explicit handling for invisible status
-            return config.emojis.offline;
-        default:
-            return config.emojis.default;
-    }
-}
+// 1. About Shivam Button
+const aboutShivamBtn = new ButtonBuilder()
+    .setCustomId(ABOUT_SHIVAM_ID)
+    .setLabel('About Shivam')
+    .setEmoji('<:crowww_1414290994777555057:1414291351888986202>')
+    .setStyle(ButtonStyle.Secondary);
+
+const row1 = new ActionRowBuilder().addComponents(aboutShivamBtn);
+
+// 2. Second Row Buttons
+const rulesBtn = new ButtonBuilder()
+    .setCustomId(RULES_ID)
+    .setLabel('Rules')
+    .setEmoji('<a:rules:1411249793308561491>')
+    .setStyle(ButtonStyle.Primary);
+
+const faqsBtn = new ButtonBuilder()
+    .setCustomId(FAQS_ID)
+    .setLabel('FAQs')
+    .setEmoji('<:FAQ:1414669616961159299>')
+    .setStyle(ButtonStyle.Primary);
+
+const roleInfoBtn = new ButtonBuilder()
+    .setCustomId(ROLE_INFO_ID)
+    .setLabel('Role Info')
+    .setEmoji('<:information:1414670703579369552>')
+    .setStyle(ButtonStyle.Primary);
+
+const selfRolesBtn = new ButtonBuilder()
+    .setCustomId(SELF_ROLES_ID)
+    .setLabel('Self Roles')
+    .setEmoji('<:roles:1414670814565105725>')
+    .setStyle(ButtonStyle.Primary);
+
+const volunteerListBtn = new ButtonBuilder()
+    .setCustomId(VOLUNTEER_LIST_ID)
+    .setLabel('Volunteer List')
+    .setEmoji('<:Staff:1414671043788013718>')
+    .setStyle(ButtonStyle.Primary);
+
+const row2 = new ActionRowBuilder().addComponents(rulesBtn, faqsBtn, roleInfoBtn, selfRolesBtn, volunteerListBtn);
+
+// 3. Third Row Button
+const gratitudeListBtn = new ButtonBuilder()
+    .setCustomId(GRATITUDE_LIST_ID)
+    .setLabel('Gratitude List')
+    .setEmoji('<:SD_Klee_Heart:1368535026978914346>')
+    .setStyle(ButtonStyle.Primary);
+
+const row3 = new ActionRowBuilder().addComponents(gratitudeListBtn);
 
 
-/**
- * Fetches staff status, builds the message, and sends/edits it.
- */
-async function updateStatus() {
-    console.log(`[${new Date().toLocaleTimeString()}] Running Status Update...`);
-    
-    if (!client.isReady()) {
-        console.log("Client not ready yet, skipping update.");
+// --- Event Handlers ---
+client.once('ready', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+
+    const channel = await client.channels.fetch(CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) {
+        console.error(`❌ Could not find or access text channel with ID: ${CHANNEL_ID}`);
         return;
     }
 
+    // 1. Send the first message (Image only)
     try {
-        const channel = await client.channels.fetch(config.channelId);
-        if (!channel) return console.error('Error: Could not find the specified channel.');
-
-        const guild = channel.guild;
-        if (!guild) return console.error('Error: Could not find the guild for the channel.');
-
-        const availableStaffs = [];
-        const unavailableStaffs = [];
-
-        // 1. Fetch all staff members and their current presence
-        for (const id of config.staffIds) {
-            try {
-                // Fetch the member to get the latest presence
-                const member = await guild.members.fetch({ user: id, force: true });
-                
-                // Get the current presence status (defaults to 'offline')
-                const status = member.presence?.status || 'offline';
-                
-                // Construct the output line: {status emoji} @mention (username)
-                const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
-
-                // 2. Separate based on availability
-                // Only 'online' and 'idle' are considered available
-                if (status === 'online' || status === 'idle') {
-                    availableStaffs.push(line);
-                } else {
-                    // 'dnd', 'offline', 'invisible' (as requested), and any others are unavailable
-                    unavailableStaffs.push(line); 
-                }
-            } catch (err) {
-                // Fallback if user ID is invalid or bot cannot access member data
-                console.error(`Error fetching staff member ${id}:`, err.message);
-                unavailableStaffs.push(`:x: <@${id}> (\`User Data Unavailable\`)`);
-            }
-        }
-
-        // 3. Build the Embed Message
-        const availableContent = availableStaffs.join('\n') || '*No staffs currently available.*';
-        const unavailableContent = unavailableStaffs.join('\n') || '*No staffs currently unavailable.*';
-
-        const statusEmbed = new EmbedBuilder()
-            // Using a neutral color for the default look (default is 0x000000, but using a subtle gray is better)
-            .setColor(0x808080) 
-            .setTitle('👥 Staff Status Overview')
-            .setAuthor({ 
-                name: "👑 Shivam’s Discord", 
-                iconURL: "https://cdn.discordapp.com/icons/1349281907765936188/7f90f5ba832e7672d4f55eb0c6017813.png?size=4096", 
-                url: "https://discord.gg/ha7K8ngyex"
-            })
-            .addFields(
-                { name: 'Available Staffs:', value: availableContent, inline: false },
-                { name: 'Unavailable Staffs:', value: unavailableContent, inline: false }
-            )
-            // Footer shows the time of the last update
-            .setFooter({ text: 'Status last updated' })
-            .setTimestamp(); // This automatically includes the current time in the footer
-            
-        // 4. Send or Edit the Message
-        if (statusMessageId) {
-            // Edit existing message
-            const message = await channel.messages.fetch(statusMessageId);
-            await message.edit({ embeds: [statusEmbed] });
-            console.log('Status message edited successfully.');
-        } else {
-            // Send new message (on startup)
-            const message = await channel.send({ embeds: [statusEmbed] });
-            statusMessageId = message.id; // Save the ID for future edits
-            console.log('Initial status message sent successfully. ID saved.');
-        }
-
+        await channel.send({
+            files: ['https://cdn.discordapp.com/attachments/1349771087851814993/1430613516913610894/IMG_20251022_231707.png?ex=68fb12e9&is=68f9c169&hm=37cf19f7f889a818546ea5912e91984fa616bf0ac1e8a22cfd8ee4205f52949e&'],
+        });
+        console.log('✅ Sent Image Message.');
     } catch (error) {
-        console.error('FATAL ERROR during status update loop:', error);
+        console.error('❌ Error sending image message:', error);
     }
-}
 
-// --- BOT EVENTS ---
+    // 2. Send the second message (Welcome message with buttons)
+    const welcomeMessage = `## <a:hello:1413065594789564497> Welcome to 👑 Shivam’s Discord
+This is the official community for Shivam, known for his Blockman Go edits and viral YouTube Shorts.
+> 👑 Shivam’s Discord is a space built for laughs, conversations, and good vibes. From daily chats to community events, there’s always something happening here.
 
-client.on('ready', () => {
-    if (!config.token) {
-        console.error('ERROR: DISCORD_TOKEN is missing. Check your .env file and environment variables.');
-        // If the token is missing, destroy the client immediately
-        return client.destroy(); 
+<:emote:1411249606636998698> **What you’ll find here:**
+\` • \` Fun discussions & banter inspired by Shivam.
+
+\` • \` Regular events and interactive activities.
+
+\` • \` A place to share your best moments.
+
+\` • \` A welcoming space to meet new people.
+
+<a:rules:1411249793308561491> **Rules of the Server:**
+\` • \` Follow [Discord’s Terms of Service](<https://discord.com/terms>) & [Community Guidelines](<https://discord.com/guidelines>).
+
+\` • \` Respect staff decisions; they manage situations fairly.
+
+\` • \` No spam of any kind (messages, emojis, reactions, or images).
+
+\` • \` Use the correct channels for each topic.
+
+\` • \` Only Hindi & English are allowed here.
+
+\` • \` Check out the list of rules by clicking the blue colored \`Rules\` button attached below.
+
+<a:note:1411250173665083494> **Final Note**
+> This server is here to bring people together. Join the conversations, have fun, and help make **👑 Shivam’s Discord** a place everyone enjoys.
+
+<:Icon_ServerVerified:1411271107809644605> **Join Us**
+https://discord.gg/9y9XQ85U2d`;
+
+    try {
+        await channel.send({
+            content: welcomeMessage,
+            components: [row1, row2, row3],
+        });
+        console.log('✅ Sent Welcome Message with Buttons.');
+    } catch (error) {
+        console.error('❌ Error sending welcome message:', error);
     }
-    
-    console.log(`Bot is logged in as ${client.user.tag}!`);
-    
-    // 1. Run the status update immediately on startup
-    updateStatus();
-
-    // 2. Set the interval to run the update function every 60 seconds (1 minute)
-    setInterval(updateStatus, 5000); 
 });
 
-// Start the bot
-client.login(config.token).catch(err => {
-    console.error("Failed to log in to Discord. Check your token and internet connection.", err);
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton()) return;
+    
+    // Pass the interaction to the specialized handler
+    await handleInteraction(interaction);
 });
+
+// Replace with your actual bot token
+client.login(process.env.DISCORD_TOKEN || 'YOUR_BOT_TOKEN_HERE'); 
