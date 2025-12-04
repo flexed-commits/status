@@ -182,7 +182,7 @@ client.on('ready', () => {
 
     // 2. Set the interval to run the update function every 5 seconds (5000 milliseconds)
     // *** THIS IS THE CHANGED LINE ***
-    setInterval(updateStatus, **5000**); 
+    setInterval(updateStatus, 5000); 
 });
 
 // Start the bot
