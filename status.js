@@ -24,9 +24,9 @@ const config = {
     channelId: '1445693527274295378',
     // Custom emojis provided by the user
     emojis: {
-        offline: '<:offline:1445697413015666749>',
-        dnd: '<:dnd:1445697600446660668>',
-        online: '<a:Online:1445697846354509886>',
+        offline: '<:offline:1446076549437722664>',
+        dnd: '<:dnd:1446076559722020955>',
+        online: '<:online:1446076453161668739>',
         idle: '<:Idle:1445697974557609994>',
         default: '⚫' // Fallback for unexpected statuses
     },
