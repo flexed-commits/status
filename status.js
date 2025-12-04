@@ -130,6 +130,19 @@ async function updateStatus() {
         // 3. Build the Embed Message
         const availableContent = availableStaffs.join('\n') || '*No staffs currently available.*';
         const unavailableContent = unavailableStaffs.join('\n') || '*No staffs currently unavailable.*';
+        
+        // ** MODIFICATION START **
+        // Manually format the timestamp to include seconds
+        const lastUpdatedTime = new Date().toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            hour12: true // Use AM/PM format
+        });
+        // ** MODIFICATION END **
 
         const statusEmbed = new EmbedBuilder()
             // Using a neutral color for the default look (default is 0x000000, but using a subtle gray is better)
@@ -145,8 +158,10 @@ async function updateStatus() {
                 { name: 'Unavailable Staffs:', value: unavailableContent, inline: false }
             )
             // Footer shows the time of the last update
-            .setFooter({ text: 'Status last updated' })
-            .setTimestamp(); // This automatically includes the current time in the footer
+            // ** MODIFIED LINE **
+            .setFooter({ text: `Status last updated: ${lastUpdatedTime}` }); 
+            // Removed .setTimestamp()
+        // ** MODIFICATION END **
 
         // 4. Send or Edit the Message
         if (statusMessageId) {
@@ -181,7 +196,6 @@ client.on('ready', () => {
     updateStatus();
 
     // 2. Set the interval to run the update function every 5 seconds (5000 milliseconds)
-    // *** THIS IS THE CHANGED LINE ***
     setInterval(updateStatus, 5000); 
 });
 
