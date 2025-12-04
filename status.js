@@ -110,7 +110,7 @@ async function updateStatus() {
                 const status = member.presence?.status || 'offline';
 
                 // Construct the output line: {status emoji} @mention (username)
-                const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
+                const line = `${getEmoji(status)} <@${member.id}> (\${member.user.username}\)`;
 
                 // 2. Separate based on availability
                 // Only 'online' and 'idle' are considered available
@@ -123,7 +123,7 @@ async function updateStatus() {
             } catch (err) {
                 // Fallback if user ID is invalid or bot cannot access member data
                 console.error(`Error fetching staff member ${id}:`, err.message);
-                unavailableStaffs.push(`:x: <@${id}> (\`User Data Unavailable\`)`);
+                unavailableStaffs.push(`:x: <@${id}> (\User Data Unavailable\)`);
             }
         }
 
