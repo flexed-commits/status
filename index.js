@@ -1,4 +1,3 @@
-// index.js
 import { Client, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, codeBlock } from 'discord.js';
 import { handleInteraction } from './interactions.js'; // Import the interaction handler
 
@@ -87,9 +86,12 @@ client.once('ready', async () => {
     }
 
     // 1. Send the first message (Image only)
+    const mainImageUrl = 'https://cdn.discordapp.com/attachments/1349771087851814993/1430613516913610894/IMG_20251022_231707.png?ex=68fb12e9&is=68f9c169&hm=37cf19f7f889a818546ea5912e91984fa616bf0ac1e8a22cfd8ee4205f52949e&';
+    
     try {
+        // CORRECTION APPLIED: Use { attachment: URL } format for remote files
         await channel.send({
-            files: ['https://cdn.discordapp.com/attachments/1349771087851814993/1430613516913610894/IMG_20251022_231707.png?ex=68fb12e9&is=68f9c169&hm=37cf19f7f889a818546ea5912e91984fa616bf0ac1e8a22cfd8ee4205f52949e&'],
+            files: [{ attachment: mainImageUrl }],
         });
         console.log('✅ Sent Image Message.');
     } catch (error) {
@@ -142,7 +144,7 @@ https://discord.gg/9y9XQ85U2d`;
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
-    
+
     // Pass the interaction to the specialized handler
     await handleInteraction(interaction);
 });
