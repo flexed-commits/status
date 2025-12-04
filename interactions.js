@@ -1,4 +1,3 @@
-// interactions.js
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, codeBlock } from 'discord.js';
 
 // --- Button IDs (Must match index.js) ---
@@ -48,10 +47,12 @@ const toggleRole = async (interaction, roleId, action = 'toggle', removeRoles = 
             }
         }
 
-        return interaction.reply({ content: responseText, ephemeral: true });
+        // Use editReply since we deferred the interaction at the start of handleInteraction
+        return interaction.editReply({ content: responseText, ephemeral: true });
     } catch (e) {
         console.error('Error toggling role:', e);
-        return interaction.reply({ content: `❌ An error occurred while updating your roles.`, ephemeral: true });
+        // Ensure to use editReply after deferring
+        return interaction.editReply({ content: `❌ An error occurred while updating your roles.`, ephemeral: true });
     }
 };
 
@@ -79,7 +80,8 @@ const handleAboutShivam = async (interaction) => {
 
     const row = new ActionRowBuilder().addComponents(subscribeBtn);
 
-    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    // Use editReply since we deferred the interaction at the start of handleInteraction
+    await interaction.editReply({ embeds: [embed], components: [row], ephemeral: true });
 };
 
 const handleRules = async (interaction) => {
@@ -115,10 +117,13 @@ const handleRules = async (interaction) => {
 17. Follow the discord terms: [discord.com/terms](<https://discord.com/terms>)
 
 18. Follow the discord guidelines: [discord.com/guidelines](<https://discord.com/guidelines>)`;
+    
+    const rulesImageUrl = 'https://cdn.discordapp.com/attachments/1349771087851814993/1431342690938650806/IMG_20251024_233432.png?ex=6931cd42&is=69307bc2&hm=4ecadfff5a921c777d1346d09219f1f71dd96eefe2cc4314f1301ac154d83f39&';
 
-    await interaction.reply({
+    // CORRECTION APPLIED: Use { attachment: URL } format for remote files
+    await interaction.editReply({
         content: rulesContent,
-        files: ['https://cdn.discordapp.com/attachments/1349771087851814993/1431342690938650806/IMG_20251024_233432.png?ex=6931cd42&is=69307bc2&hm=4ecadfff5a921c777d1346d09219f1f71dd96eefe2cc4314f1301ac154d83f39&'],
+        files: [{ attachment: rulesImageUrl }],
         ephemeral: true
     });
 };
@@ -126,10 +131,13 @@ const handleRules = async (interaction) => {
 const handleFAQs = async (interaction) => {
     const faqsContent = `A. It is difficult to contact him through DMs as he rarely responds to it, so be active in the server as he can randomly appear in the chat. 
 -# Refrain from pinging him.`;
+    
+    const faqsImageUrl = 'https://cdn.discordapp.com/attachments/1349771087851814993/1431353959032946824/IMG_20251025_001925.png?ex=6931d7c1&is=69308641&hm=608686f39361efa66697654e067954a0ce508540663f2a34be09556c8e4d68f6&';
 
-    await interaction.reply({
+    // CORRECTION APPLIED: Use { attachment: URL } format for remote files
+    await interaction.editReply({
         content: faqsContent,
-        files: ['https://cdn.discordapp.com/attachments/1349771087851814993/1431353959032946824/IMG_20251025_001925.png?ex=6931d7c1&is=69308641&hm=608686f39361efa66697654e067954a0ce508540663f2a34be09556c8e4d68f6&'],
+        files: [{ attachment: faqsImageUrl }],
         ephemeral: true
     });
 };
@@ -141,10 +149,13 @@ const handleRoleInfo = async (interaction) => {
     const levelRoleBtn = new ButtonBuilder().setCustomId(LEVEL_ROLE_ID).setLabel('Level Role').setStyle(ButtonStyle.Secondary);
 
     const row = new ActionRowBuilder().addComponents(staffRoleBtn, exclusiveRoleBtn, memberRoleBtn, levelRoleBtn);
+    
+    const roleInfoImageUrl = 'https://cdn.discordapp.com/attachments/1349771087851814993/1431353771933437982/IMG_20251025_001801.png?ex=6931d794&is=69308614&hm=c2873ff132ccf76b056bdf0970a306a171e2d34902db8e1b501d24a6c075c859&';
 
-    await interaction.reply({
+    // CORRECTION APPLIED: Use { attachment: URL } format for remote files
+    await interaction.editReply({
         content: 'Click on the buttons below to read information about roles of those categories. \nFor now there are only four categories Staff Roles, Exclusive Roles, Member Roles and Level Roles Respectively.',
-        files: ['https://cdn.discordapp.com/attachments/1349771087851814993/1431353771933437982/IMG_20251025_001801.png?ex=6931d794&is=69308614&hm=c2873ff132ccf76b056bdf0970a306a171e2d34902db8e1b501d24a6c075c859&'],
+        files: [{ attachment: roleInfoImageUrl }],
         components: [row],
         ephemeral: true
     });
@@ -246,7 +257,7 @@ ${divider}
     }
 
     // Edit the original ephemeral message to show the role details
-    await interaction.update({
+    await interaction.editReply({
         content: content,
         embeds: [],
         files: [],
@@ -261,7 +272,7 @@ const handleSelfRoles = async (interaction) => {
 
     const row = new ActionRowBuilder().addComponents(pingRoleBtn, ageRoleBtn, genderRoleBtn);
 
-    await interaction.reply({
+    await interaction.editReply({
         content: '**Click on the buttons below to redirect yourself to the relevant role categories.**',
         components: [row],
         ephemeral: true
@@ -281,7 +292,7 @@ const handleSelfRolesCategory = async (interaction) => {
 <:deadchat:1355602043666039004>  <@&1350500645777571891>
 <:poll:1413084561272737853> <@&1373712857669308519>
 <:roblox:1411415158894628895> <@&1409881135076343828>`;
-        
+
         const btn1 = new ButtonBuilder().setCustomId('toggle_1350500909074878649').setLabel('YouTube Video Notification').setEmoji('<a:bell:1413084012435476490>').setStyle(ButtonStyle.Primary);
         const btn2 = new ButtonBuilder().setCustomId('toggle_1350501214424399872').setLabel('Live Stream Notification').setEmoji('<:status_streaming:1413084415508090971>').setStyle(ButtonStyle.Primary);
         const btn3 = new ButtonBuilder().setCustomId('toggle_1350501088935153756').setLabel('Giveaway Ping').setEmoji('<a:Giveaways:1355602892480057384>').setStyle(ButtonStyle.Primary);
@@ -299,7 +310,7 @@ const handleSelfRolesCategory = async (interaction) => {
 
         const over18Btn = new ButtonBuilder().setCustomId('age_add_1350501527541907456_rem_1350501460022132746').setLabel('Over 18').setEmoji('<a:18:1413084838667223041>').setStyle(ButtonStyle.Primary);
         const under18Btn = new ButtonBuilder().setCustomId('age_add_1350501460022132746_rem_1350501527541907456').setLabel('Under 18').setEmoji('<:18_18_18_18_18:1413084884192198817>').setStyle(ButtonStyle.Primary);
-        
+
         components.push(new ActionRowBuilder().addComponents(over18Btn, under18Btn));
     } else if (customId === SELF_ROLES_GENDER_ID) {
         // Role IDs: 1: 1350501637625741414, 2: 1350501700246442025, 3: 1350501815640264865
@@ -315,12 +326,12 @@ const handleSelfRolesCategory = async (interaction) => {
         const heHimBtn = new ButtonBuilder().setCustomId(`gender_add_${maleId}_rem_${femaleId},${otherId}`).setLabel('He/Him').setEmoji('<:male:1413085884018069574>').setStyle(ButtonStyle.Primary);
         const sheHerBtn = new ButtonBuilder().setCustomId(`gender_add_${femaleId}_rem_${maleId},${otherId}`).setLabel('She/Her').setEmoji('<:female:1413085667100987394>').setStyle(ButtonStyle.Primary);
         const theyThemBtn = new ButtonBuilder().setCustomId(`gender_add_${otherId}_rem_${maleId},${femaleId}`).setLabel('They/Them').setEmoji('🏳️‍🌈').setStyle(ButtonStyle.Primary);
-        
+
         components.push(new ActionRowBuilder().addComponents(heHimBtn, sheHerBtn, theyThemBtn));
     }
 
     // Update the original ephemeral message to show the self-role options
-    await interaction.update({
+    await interaction.editReply({
         content: content,
         components: components,
         embeds: [],
@@ -347,7 +358,7 @@ const handleVolunteerList = async (interaction) => {
 \` • \` <@1180098931280064562>
 \` • \` <@1408294418695589929>
 \` • \` <@1317831363474227251>`;
-    await interaction.reply({ content: content, ephemeral: true });
+    await interaction.editReply({ content: content, ephemeral: true });
 };
 
 const handleGratitudeList = async (interaction) => {
@@ -368,15 +379,15 @@ Second Co-owner & Founder of this server. Maintains this server silently.
  1. <@1151136510763094027>
 Ayush was once a member of this server, he was a great BGTuber. SG and Ayush was the best combo of YouTubers I have ever seen. But recently he died due to breathing issues & other reasons which weren't revealed by the source. He left us too soon. May god take care of him there. Fly High Ayush!
 # Huge Thanks to all the members mentioned above.`;
-    await interaction.reply({ content: content, ephemeral: true });
+    await interaction.editReply({ content: content, ephemeral: true });
 };
 
 
 // --- Main Interaction Handler ---
 export const handleInteraction = async (interaction) => {
     if (!interaction.isButton()) return;
-    
-    // Defer the reply to avoid timeout if role operations take time
+
+    // Defer the reply to avoid timeout if role operations take time, and use editReply later
     await interaction.deferReply({ ephemeral: true });
 
     const customId = interaction.customId;
@@ -407,6 +418,7 @@ export const handleInteraction = async (interaction) => {
     // Role Toggling (Ping Roles)
     else if (customId.startsWith('toggle_')) {
         const roleId = customId.substring('toggle_'.length);
+        // Note: toggleRole handles the editReply internally
         await toggleRole(interaction, roleId, 'toggle');
     } 
     // Role Toggling (Age/Gender Roles - exclusive roles)
@@ -415,7 +427,8 @@ export const handleInteraction = async (interaction) => {
         const parts = customId.split('_rem_');
         const roleIdToAdd = parts[0].split('_add_')[1];
         const roleIdsToRemove = parts[1] ? parts[1].split(',') : [];
-        
+
+        // Note: toggleRole handles the editReply internally
         await toggleRole(interaction, roleIdToAdd, 'add', roleIdsToRemove);
     }
      else {
