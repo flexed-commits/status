@@ -42,24 +42,27 @@ const config = {
 
 // --- CLIENT SETUP ---
 
-// Client requires Presence and Guild Member Intents to read user status
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildPresences, // Required for status checks
-        GatewayIntentBits.GuildMembers,   // Required for fetching members
+        GatewayIntentBits.GuildPresences, 
+        GatewayIntentBits.GuildMembers,   
+        GatewayIntentBits.MessageContent, 
     ],
     partials: [Partials.Channel, Partials.Message]
 });
 
-// Global variable to store the ID of the status message for minute-by-minute editing.
+// Global state variables
 let statusMessageId = null; 
+let cycleCount = 0;
+// Calculate the number of 20-second cycles in 12 hours: (12 * 60 * 60) / 20 = 2160
+const MAX_CYCLES = 2160; 
+const INTERVAL_MS = 20000; // 20 seconds
 
 /**
  * Maps the Discord status string to the custom emoji string.
- * This is updated to treat 'invisible' as 'offline' emoji.
- * @param {string} status - The raw status from Discord (online, idle, dnd, offline, invisible).
+ * @param {string} status - The raw status from Discord.
  * @returns {string} The corresponding custom emoji string.
  */
 function getEmoji(status) {
@@ -71,7 +74,7 @@ function getEmoji(status) {
         case 'dnd':
             return config.emojis.dnd; 
         case 'offline':
-        case 'invisible': // <-- New explicit handling for invisible status
+        case 'invisible': 
             return config.emojis.offline;
         default:
             return config.emojis.default;
@@ -80,10 +83,11 @@ function getEmoji(status) {
 
 
 /**
- * Fetches staff status, builds the message, and sends/edits it.
+ * Fetches staff status, builds the message, and either edits or sends a new one based on the cycle.
  */
 async function updateStatus() {
-    console.log(`[${new Date().toLocaleTimeString()}] Running Status Update...`);
+    cycleCount++;
+    console.log(`[${new Date().toLocaleTimeString()}] Running Status Update. Cycle: ${cycleCount}/${MAX_CYCLES}`);
 
     if (!client.isReady()) {
         console.log("Client not ready yet, skipping update.");
@@ -103,36 +107,26 @@ async function updateStatus() {
         // 1. Fetch all staff members and their current presence
         for (const id of config.staffIds) {
             try {
-                // Fetch the member to get the latest presence
                 const member = await guild.members.fetch({ user: id, force: true });
-
-                // Get the current presence status (defaults to 'offline')
                 const status = member.presence?.status || 'offline';
-
-                // Construct the output line: {status emoji} @mention (username)
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
 
-                // 2. Separate based on availability
-                // Only 'online' and 'idle' are considered available
                 if (status === 'online' || status === 'idle') {
                     availableStaffs.push(line);
                 } else {
-                    // 'dnd', 'offline', 'invisible' (as requested), and any others are unavailable
                     unavailableStaffs.push(line); 
                 }
             } catch (err) {
-                // Fallback if user ID is invalid or bot cannot access member data
                 console.error(`Error fetching staff member ${id}:`, err.message);
                 unavailableStaffs.push(`:x: <@${id}> (\`User Data Unavailable\`)`);
             }
         }
 
-        // 3. Build the Embed Message
+        // 2. Build the Embed Message
         const availableContent = availableStaffs.join('\n') || '*No staffs currently available.*';
         const unavailableContent = unavailableStaffs.join('\n') || '*No staffs currently unavailable.*';
 
         const statusEmbed = new EmbedBuilder()
-            // Using a neutral color for the default look (default is 0x000000, but using a subtle gray is better)
             .setColor(0x808080) 
             .setTitle('👥 Staff Status Overview')
             .setAuthor({ 
@@ -144,21 +138,45 @@ async function updateStatus() {
                 { name: 'Available Staffs:', value: availableContent, inline: false },
                 { name: 'Unavailable Staffs:', value: unavailableContent, inline: false }
             )
-            // Footer shows the time of the last update
             .setFooter({ text: 'Status last updated' })
-            .setTimestamp(); // This automatically includes the current time in the footer
+            .setTimestamp();
 
-        // 4. Send or Edit the Message
-        if (statusMessageId) {
-            // Edit existing message
-            const message = await channel.messages.fetch(statusMessageId);
-            await message.edit({ embeds: [statusEmbed] });
-            console.log('Status message edited successfully.');
-        } else {
-            // Send new message (on startup)
+        // 3. Determine Action: Send/Delete (12-hour cycle) or Edit (20-second cycle)
+        const isNewMessageCycle = cycleCount >= MAX_CYCLES || statusMessageId === null;
+
+        if (isNewMessageCycle) {
+            // --- 12-HOUR CYCLE: DELETE OLD MESSAGE AND SEND NEW ONE ---
+
+            // Delete previous message if ID exists
+            if (statusMessageId) {
+                try {
+                    const messageToDelete = await channel.messages.fetch(statusMessageId);
+                    await messageToDelete.delete();
+                    console.log('Previous message deleted for 12-hour cycle.');
+                } catch (deleteError) {
+                    console.log('Could not delete previous message (may be missing):', deleteError.message);
+                }
+            }
+
+            // Send new message
             const message = await channel.send({ embeds: [statusEmbed] });
-            statusMessageId = message.id; // Save the ID for future edits
-            console.log('Initial status message sent successfully. ID saved.');
+            statusMessageId = message.id; // Save the ID of the new message
+            cycleCount = 1; // Reset counter for the 20-second edit loop
+            console.log('New status message sent successfully (12-hour cycle start).');
+
+        } else {
+            // --- 20-SECOND CYCLE: EDIT EXISTING MESSAGE ---
+            
+            try {
+                const message = await channel.messages.fetch(statusMessageId);
+                await message.edit({ embeds: [statusEmbed] });
+                console.log('Status message edited successfully (20-second cycle).');
+            } catch (editError) {
+                // If edit fails (e.g., message was deleted manually), force a new message on the next cycle
+                console.error('Error editing message. Resetting statusMessageId to force a new message send:', editError.message);
+                statusMessageId = null;
+                cycleCount = MAX_CYCLES; // Immediately trigger the send/delete cycle next time
+            }
         }
 
     } catch (error) {
@@ -171,18 +189,18 @@ async function updateStatus() {
 client.on('ready', () => {
     if (!config.token) {
         console.error('ERROR: DISCORD_TOKEN is missing. Check your .env file and environment variables.');
-        // If the token is missing, destroy the client immediately
         return client.destroy(); 
     }
 
     console.log(`Bot is logged in as ${client.user.tag}!`);
 
-    // 1. Run the status update immediately on startup
+    // 1. Run the status update immediately on startup (This triggers the first 'send new message' action)
+    // By setting cycleCount = MAX_CYCLES on startup, we force the first action to be 'Send New Message'
+    cycleCount = MAX_CYCLES; 
     updateStatus();
 
-    // 2. Set the interval to run the update function every 5 seconds (5000 milliseconds)
-    // *** THIS IS THE CHANGED LINE ***
-    setInterval(updateStatus, 20000); 
+    // 2. Set the interval to run the update function every 20 seconds.
+    setInterval(updateStatus, INTERVAL_MS); 
 });
 
 // Start the bot
