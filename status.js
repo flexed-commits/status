@@ -121,8 +121,28 @@ async function updateStatus() {
                 unavailableStaffs.push(`:x: <@${id}> (\`User Data Unavailable\`)`);
             }
         }
+        
+        // **********************************************
+        // 2. NEW LOGIC: Update Bot's Presence (Status and Activity)
+        // **********************************************
+        const availableCount = availableStaffs.length;
 
-        // 2. Build the Embed Message
+        // Set the bot's status text and activity
+        const statusText = `${availableCount} staff${availableCount === 1 ? '' : 's'} available`;
+        const activityText = `Watching ${availableCount} staff${availableCount === 1 ? '' : 's'}`;
+
+        client.user.setPresence({
+            activities: [{ 
+                name: activityText, 
+                type: 3 // Activity Type 3 is 'Watching'
+            }],
+            status: 'online', // Keep the bot online
+        });
+
+        console.log(`Bot Presence Updated: Status='online', Activity='Watching ${availableCount} staff(s)'`);
+        // **********************************************
+
+        // 3. Build the Embed Message
         const availableContent = availableStaffs.join('\n') || '*No staffs currently available.*';
         const unavailableContent = unavailableStaffs.join('\n') || '*No staffs currently unavailable.*';
 
@@ -141,7 +161,7 @@ async function updateStatus() {
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        // 3. Determine Action: Send/Delete (12-hour cycle) or Edit (20-second cycle)
+        // 4. Determine Action: Send/Delete (12-hour cycle) or Edit (20-second cycle)
         const isNewMessageCycle = cycleCount >= MAX_CYCLES || statusMessageId === null;
 
         if (isNewMessageCycle) {
@@ -195,7 +215,6 @@ client.on('ready', () => {
     console.log(`Bot is logged in as ${client.user.tag}!`);
 
     // 1. Run the status update immediately on startup (This triggers the first 'send new message' action)
-    // By setting cycleCount = MAX_CYCLES on startup, we force the first action to be 'Send New Message'
     cycleCount = MAX_CYCLES; 
     updateStatus();
 
