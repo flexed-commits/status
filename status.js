@@ -139,7 +139,7 @@ async function updateStatus() {
             status: 'online', // Keep the bot online
         });
 
-        console.log(`Bot Presence Updated: Status='online', Activity='Watching ${availableCount} staff(s)'`);
+        console.log(`Bot Presence Updated: Status='online', Activity='${availableCount} staff(s)'`);
         // **********************************************
 
         // 3. Build the Embed Message
