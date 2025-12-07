@@ -3,7 +3,8 @@
 // Then, create a .env file with your bot token: DISCORD_TOKEN=YOUR_SECRET_TOKEN
 require('dotenv').config();
 
-const { Client, GatewayIntentBits, Partials, EmbedBuilder } = require('discord.js');
+// ADDED: ActivityType for cleaner presence setting
+const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActivityType } = require('discord.js');
 
 // --- CONFIGURATION ---
 const config = {
@@ -121,25 +122,25 @@ async function updateStatus() {
                 unavailableStaffs.push(`:x: <@${id}> (\`User Data Unavailable\`)`);
             }
         }
-        
+
         // **********************************************
         // 2. NEW LOGIC: Update Bot's Presence (Status and Activity)
+        //    UPDATED to set activity type to 'Watching' and text to "x staffs"
         // **********************************************
         const availableCount = availableStaffs.length;
 
-        // Set the bot's status text and activity
-        const statusText = `${availableCount} staff${availableCount === 1 ? '' : 's'} available`;
-        const activityText = `Watching ${availableCount} staff${availableCount === 1 ? '' : 's'}`;
+        // Set the bot's activity name to "x staffs"
+        const activityName = `${availableCount} staff${availableCount === 1 ? '' : 's'}`;
 
         client.user.setPresence({
             activities: [{ 
-                name: activityText, 
-                type: 3 // Activity Type 3 is 'Watching'
+                name: activityName, // The message that appears below the bot's name (e.g., "5 staffs")
+                type: ActivityType.Watching // Set activity type to Watching
             }],
             status: 'online', // Keep the bot online
         });
 
-        console.log(`Bot Presence Updated: Status='online', Activity='${availableCount} staff(s)'`);
+        console.log(`Bot Presence Updated: Status='online', Activity='Watching ${activityName}'`);
         // **********************************************
 
         // 3. Build the Embed Message
@@ -186,7 +187,7 @@ async function updateStatus() {
 
         } else {
             // --- 20-SECOND CYCLE: EDIT EXISTING MESSAGE ---
-            
+
             try {
                 const message = await channel.messages.fetch(statusMessageId);
                 await message.edit({ embeds: [statusEmbed] });
