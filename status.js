@@ -3,12 +3,10 @@
 // Then, create a .env file with your bot token: DISCORD_TOKEN=YOUR_SECRET_TOKEN
 require('dotenv').config();
 
-// ADDED: ActivityType for cleaner presence setting
 const { Client, GatewayIntentBits, Partials, EmbedBuilder, ActivityType } = require('discord.js');
 
 // --- CONFIGURATION ---
 const config = {
-    // List of staff user IDs
     staffIds: [
         '1081876265683927080',
         '1403084314819825787',
@@ -21,28 +19,23 @@ const config = {
         '1180098931280064562',
         '1228377961569325107'
     ],
-    // The channel where the status message will be posted
     channelId: '1445693527274295378',
-    // Custom emojis provided by the user
     emojis: {
         offline: '<:offline:1446211386718949497>',
         dnd: '<:dnd:1446211384818925700>',
         online: '<:online:1446211377848123484>',
         idle: '<:idle:1446211381354434693>',
-        default: '⚫' // Fallback for unexpected statuses
+        default: '⚫'
     },
-    // Author information for the embed
     author: {
         name: 'Server Name',
         url: 'https://discord.gg/ha7K8ngyex',
-        iconURL: 'https://placehold.co/128x128/3a4049/ffffff?text=Icon' // REPLACE THIS
+        iconURL: 'https://placehold.co/128x128/3a4049/ffffff?text=Icon'
     },
-    // SECURED: Reads the token from the environment variable (DISCORD_TOKEN in .env)
     token: process.env.DISCORD_TOKEN 
 };
 
 // --- CLIENT SETUP ---
-
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -57,14 +50,11 @@ const client = new Client({
 // Global state variables
 let statusMessageId = null; 
 let cycleCount = 0;
-// Calculate the number of 20-second cycles in 12 hours: (12 * 60 * 60) / 20 = 2160
-const MAX_CYCLES = 2160; 
+const MAX_CYCLES = 2160; // (12 * 60 * 60) / 20 = 2160 cycles
 const INTERVAL_MS = 20000; // 20 seconds
 
 /**
  * Maps the Discord status string to the custom emoji string.
- * @param {string} status - The raw status from Discord.
- * @returns {string} The corresponding custom emoji string.
  */
 function getEmoji(status) {
     switch (status) {
@@ -82,6 +72,60 @@ function getEmoji(status) {
     }
 }
 
+/**
+ * Clears all messages in the channel (messages older than 14 days are deleted individually)
+ */
+async function clearChannelMessages(channel) {
+    try {
+        let deletedCount = 0;
+        let fetchMore = true;
+
+        while (fetchMore) {
+            // Fetch up to 100 messages at a time
+            const messages = await channel.messages.fetch({ limit: 100 });
+            
+            if (messages.size === 0) {
+                fetchMore = false;
+                break;
+            }
+
+            // Separate messages by age (14 days = 1209600000 ms)
+            const now = Date.now();
+            const twoWeeksAgo = now - 1209600000;
+            
+            const recentMessages = messages.filter(msg => msg.createdTimestamp > twoWeeksAgo);
+            const oldMessages = messages.filter(msg => msg.createdTimestamp <= twoWeeksAgo);
+
+            // Bulk delete recent messages (faster)
+            if (recentMessages.size > 0) {
+                await channel.bulkDelete(recentMessages, true);
+                deletedCount += recentMessages.size;
+                console.log(`Bulk deleted ${recentMessages.size} recent messages`);
+            }
+
+            // Delete old messages one by one (slower but necessary for messages older than 14 days)
+            for (const [id, msg] of oldMessages) {
+                try {
+                    await msg.delete();
+                    deletedCount++;
+                    // Small delay to avoid rate limits
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                } catch (err) {
+                    console.error(`Failed to delete message ${id}:`, err.message);
+                }
+            }
+
+            // If we fetched less than 100, we've reached the end
+            if (messages.size < 100) {
+                fetchMore = false;
+            }
+        }
+
+        console.log(`✅ Cleared ${deletedCount} total messages from channel`);
+    } catch (error) {
+        console.error('Error clearing channel messages:', error);
+    }
+}
 
 /**
  * Fetches staff status, builds the message, and either edits or sends a new one based on the cycle.
@@ -105,12 +149,12 @@ async function updateStatus() {
         const availableStaffs = [];
         const unavailableStaffs = [];
 
-        // 1. Fetch all staff members and their current presence
+        // Fetch all staff members and their current presence
         for (const id of config.staffIds) {
             try {
                 const member = await guild.members.fetch({ user: id, force: true });
                 const status = member.presence?.status || 'offline';
-                const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
+                const line = `${getEmoji(status)} <@${member.id}> (`${member.user.username}`)`;
 
                 if (status === 'online' || status === 'idle') {
                     availableStaffs.push(line);
@@ -119,39 +163,35 @@ async function updateStatus() {
                 }
             } catch (err) {
                 console.error(`Error fetching staff member ${id}:`, err.message);
-                unavailableStaffs.push(`:x: <@${id}> (\`User Data Unavailable\`)`);
+                unavailableStaffs.push(`:x: <@${id}> (`User Data Unavailable`)`);
             }
         }
 
-        // **********************************************
-        // 2. NEW LOGIC: Update Bot's Presence (Status and Activity)
-        //    UPDATED to set activity type to 'Watching' and text to "x staffs"
-        // **********************************************
+        // Update Bot's Presence
         const availableCount = availableStaffs.length;
-
-        // Set the bot's activity name to "x staffs"
         const activityName = `${availableCount} staff${availableCount === 1 ? '' : 's'}`;
 
         client.user.setPresence({
             activities: [{ 
-                name: activityName, // The message that appears below the bot's name (e.g., "5 staffs")
-                type: ActivityType.Watching // Set activity type to Watching
+                name: activityName,
+                type: ActivityType.Watching
             }],
-            status: 'online', // Keep the bot online
+            status: 'online',
         });
 
-        console.log(`Bot Presence Updated: Status='online', Activity='Watching ${activityName}'`);
-        // **********************************************
+        console.log(`Bot Presence Updated: Watching ${activityName}`);
 
-        // 3. Build the Embed Message
-        const availableContent = availableStaffs.join('\n') || '*No staffs currently available.*';
-        const unavailableContent = unavailableStaffs.join('\n') || '*No staffs currently unavailable.*';
+        // Build the Embed Message
+        const availableContent = availableStaffs.join('
+') || '*No staffs currently available.*';
+        const unavailableContent = unavailableStaffs.join('
+') || '*No staffs currently unavailable.*';
 
         const statusEmbed = new EmbedBuilder()
             .setColor(0x808080) 
             .setTitle('👥 Staff Status Overview')
             .setAuthor({ 
-                name: "👑 Shivam’s Discord", 
+                name: "👑 Shivam's Discord", 
                 iconURL: "https://cdn.discordapp.com/icons/1349281907765936188/7f90f5ba832e7672d4f55eb0c6017813.png?size=4096", 
                 url: "https://discord.gg/ha7K8ngyex"
             })
@@ -162,41 +202,40 @@ async function updateStatus() {
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        // 4. Determine Action: Send/Delete (12-hour cycle) or Edit (20-second cycle)
-        const isNewMessageCycle = cycleCount >= MAX_CYCLES || statusMessageId === null;
+        // Determine if we need to send a new message (12-hour cycle)
+        const isNewMessageCycle = cycleCount >= MAX_CYCLES;
 
         if (isNewMessageCycle) {
-            // --- 12-HOUR CYCLE: DELETE OLD MESSAGE AND SEND NEW ONE ---
-
-            // Delete previous message if ID exists
-            if (statusMessageId) {
-                try {
-                    const messageToDelete = await channel.messages.fetch(statusMessageId);
-                    await messageToDelete.delete();
-                    console.log('Previous message deleted for 12-hour cycle.');
-                } catch (deleteError) {
-                    console.log('Could not delete previous message (may be missing):', deleteError.message);
-                }
-            }
+            // --- 12-HOUR CYCLE: CLEAR ALL MESSAGES AND SEND NEW ONE ---
+            console.log('🔄 Starting 12-hour cycle: Clearing all messages...');
+            
+            // Clear all messages in the channel
+            await clearChannelMessages(channel);
 
             // Send new message
             const message = await channel.send({ embeds: [statusEmbed] });
-            statusMessageId = message.id; // Save the ID of the new message
-            cycleCount = 1; // Reset counter for the 20-second edit loop
-            console.log('New status message sent successfully (12-hour cycle start).');
+            statusMessageId = message.id;
+            cycleCount = 1; // Reset to 1 (not 0, since we just completed cycle 1)
+            console.log('✅ New status message sent successfully (12-hour cycle reset).');
 
         } else {
             // --- 20-SECOND CYCLE: EDIT EXISTING MESSAGE ---
-
             try {
-                const message = await channel.messages.fetch(statusMessageId);
-                await message.edit({ embeds: [statusEmbed] });
-                console.log('Status message edited successfully (20-second cycle).');
+                if (!statusMessageId) {
+                    // If no message ID exists, send a new one
+                    const message = await channel.send({ embeds: [statusEmbed] });
+                    statusMessageId = message.id;
+                    console.log('📨 Sent new status message (no previous message found).');
+                } else {
+                    const message = await channel.messages.fetch(statusMessageId);
+                    await message.edit({ embeds: [statusEmbed] });
+                    console.log('✏️ Status message edited successfully (20-second cycle).');
+                }
             } catch (editError) {
-                // If edit fails (e.g., message was deleted manually), force a new message on the next cycle
-                console.error('Error editing message. Resetting statusMessageId to force a new message send:', editError.message);
-                statusMessageId = null;
-                cycleCount = MAX_CYCLES; // Immediately trigger the send/delete cycle next time
+                // If edit fails, send a new message
+                console.error('⚠️ Error editing message, sending new one:', editError.message);
+                const message = await channel.send({ embeds: [statusEmbed] });
+                statusMessageId = message.id;
             }
         }
 
@@ -206,24 +245,22 @@ async function updateStatus() {
 }
 
 // --- BOT EVENTS ---
-
 client.on('ready', () => {
     if (!config.token) {
         console.error('ERROR: DISCORD_TOKEN is missing. Check your .env file and environment variables.');
         return client.destroy(); 
     }
 
-    console.log(`Bot is logged in as ${client.user.tag}!`);
+    console.log(`🤖 Bot is logged in as ${client.user.tag}!`);
 
-    // 1. Run the status update immediately on startup (This triggers the first 'send new message' action)
-    cycleCount = MAX_CYCLES; 
+    // Start the first cycle immediately
     updateStatus();
 
-    // 2. Set the interval to run the update function every 20 seconds.
+    // Set interval to run every 20 seconds
     setInterval(updateStatus, INTERVAL_MS); 
 });
 
 // Start the bot
 client.login(config.token).catch(err => {
-    console.error("Failed to log in to Discord. Check your token and internet connection.", err);
+    console.error("❌ Failed to log in to Discord. Check your token and internet connection.", err);
 });
