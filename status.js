@@ -71,9 +71,14 @@ async function clearChannelMessages(channel) {
         let deletedCount = 0;
         let fetchMore = true;
 
+        console.log('Starting to clear channel messages...');
+
         while (fetchMore) {
             const messages = await channel.messages.fetch({ limit: 100 });
-            if (messages.size === 0) break;
+            if (messages.size === 0) {
+                fetchMore = false;
+                break;
+            }
 
             const now = Date.now();
             const twoWeeksAgo = now - 1209600000; // 14 days in ms
@@ -81,27 +86,42 @@ async function clearChannelMessages(channel) {
             const recent = messages.filter(m => m.createdTimestamp > twoWeeksAgo);
             const old = messages.filter(m => m.createdTimestamp <= twoWeeksAgo);
 
+            // Bulk delete recent messages
             if (recent.size > 0) {
-                await channel.bulkDelete(recent, true);
-                deletedCount += recent.size;
+                try {
+                    await channel.bulkDelete(recent, true);
+                    deletedCount += recent.size;
+                    console.log(`Bulk deleted ${recent.size} messages`);
+                } catch (err) {
+                    console.error('Bulk delete error:', err.message);
+                }
             }
 
+            // Delete old messages one by one
             for (const msg of old.values()) {
                 try {
                     await msg.delete();
                     deletedCount++;
-                    await new Promise(res => setTimeout(res, 100));
+                    await new Promise(res => setTimeout(res, 200)); // Increased delay
                 } catch (err) {
-                    console.error(`Failed deleting old message:`, err.message);
+                    console.error(`Failed deleting old message ${msg.id}:`, err.message);
                 }
             }
 
-            if (messages.size < 100) fetchMore = false;
+            // If we fetched less than 100, we're done
+            if (messages.size < 100) {
+                fetchMore = false;
+            }
+
+            // Add a small delay between batches
+            await new Promise(res => setTimeout(res, 1000));
         }
 
-        console.log(`Cleared ${deletedCount} messages from channel.`);
+        console.log(`✓ Cleared ${deletedCount} messages from channel.`);
+        return deletedCount;
     } catch (error) {
         console.error('Error clearing messages:', error);
+        return 0;
     }
 }
 
@@ -117,6 +137,24 @@ async function updateStatus() {
         const guild = channel.guild;
         if (!guild) return console.error("Guild not found.");
 
+        // Check if we need to start a new cycle BEFORE fetching members
+        const newCycle = cycleCount >= MAX_CYCLES;
+
+        if (newCycle) {
+            console.log(`Starting new cycle (count: ${cycleCount}). Clearing channel...`);
+            
+            // Clear the status message ID first
+            statusMessageId = null;
+            
+            // Clear all messages
+            await clearChannelMessages(channel);
+            
+            // Reset cycle count
+            cycleCount = 0;
+            
+            console.log("Channel cleared. Creating new status message...");
+        }
+
         const available = [];
         const unavailable = [];
 
@@ -125,9 +163,7 @@ async function updateStatus() {
                 const member = await guild.members.fetch(id);
                 const status = member.presence?.status || 'offline';
 
-                // --- FIX: Using correct template literal syntax for the list item ---
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
-                // --- END FIX ---
 
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
@@ -141,12 +177,13 @@ async function updateStatus() {
 
         // Update Bot Presence
         const count = available.length;
-        // --- FIX: Using correct template literal syntax for the activity name ---
         client.user.setPresence({
-            activities: [{ name: `${count} staff${count === 1 ? "" : "s"} available`, type: ActivityType.Watching }],
+            activities: [{ 
+                name: `${count} staff${count === 1 ? "" : "s"} available`, 
+                type: ActivityType.Watching 
+            }],
             status: 'online'
         });
-        // --- END FIX ---
 
         const embed = new EmbedBuilder()
             .setColor(0x808080)
@@ -163,36 +200,33 @@ async function updateStatus() {
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        const newCycle = cycleCount >= MAX_CYCLES;
-
-        if (newCycle) {
-            console.log("Starting new cycle: Clearing channel...");
-            await clearChannelMessages(channel);
-            const msg = await channel.send({ embeds: [embed] });
-            statusMessageId = msg.id;
-            cycleCount = 0;  // Reset to 0 since we increment at the beginning
-        } else {
-            try {
-                if (!statusMessageId) {
-                    const msg = await channel.send({ embeds: [embed] });
-                    statusMessageId = msg.id;
-                } else {
-                    const msg = await channel.messages.fetch(statusMessageId);
-                    await msg.edit({ embeds: [embed] });
-                }
-            } catch (err) {
-                console.error("Failed to edit existing message, sending new one:", err);
+        // Send or edit the message
+        try {
+            if (!statusMessageId) {
+                // No existing message, send a new one
                 const msg = await channel.send({ embeds: [embed] });
                 statusMessageId = msg.id;
+                console.log(`Created new status message: ${statusMessageId}`);
+            } else {
+                // Try to edit existing message
+                const msg = await channel.messages.fetch(statusMessageId);
+                await msg.edit({ embeds: [embed] });
             }
+        } catch (err) {
+            console.error("Failed to edit/fetch existing message:", err.message);
+            // Message doesn't exist, create new one
+            const msg = await channel.send({ embeds: [embed] });
+            statusMessageId = msg.id;
+            console.log(`Created new status message after error: ${statusMessageId}`);
         }
+
     } catch (err) {
         console.error("Error in updateStatus():", err);
     }
 }
 
 client.on('ready', () => {
-    console.log(`Bot logged in as ${client.user.tag}`);
+    console.log(`✓ Bot logged in as ${client.user.tag}`);
 
     updateStatus();
     setInterval(updateStatus, INTERVAL_MS);
