@@ -50,7 +50,7 @@ const client = new Client({
 let statusMessageId = null;
 let cycleCount = 0;
 
-const MAX_CYCLES = 2160;  // Every 12 hours
+const MAX_CYCLES = 2160;  // Every 12 hours (2160 * 20s = 12h)
 const INTERVAL_MS = 20000; // Every 20 seconds
 
 // Status → Emoji
@@ -76,7 +76,7 @@ async function clearChannelMessages(channel) {
             if (messages.size === 0) break;
 
             const now = Date.now();
-            const twoWeeksAgo = now - 1209600000;
+            const twoWeeksAgo = now - 1209600000; // 14 days in ms
 
             const recent = messages.filter(m => m.createdTimestamp > twoWeeksAgo);
             const old = messages.filter(m => m.createdTimestamp <= twoWeeksAgo);
@@ -99,7 +99,7 @@ async function clearChannelMessages(channel) {
             if (messages.size < 100) fetchMore = false;
         }
 
-        console.log(`Cleared ${deletedCount} messages.`);
+        console.log(`Cleared ${deletedCount} messages from channel.`);
     } catch (error) {
         console.error('Error clearing messages:', error);
     }
@@ -125,7 +125,7 @@ async function updateStatus() {
                 const member = await guild.members.fetch(id);
                 const status = member.presence?.status || 'offline';
 
-                const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
+                const line = `\( {getEmoji(status)} <@ \){member.id}> (\`${member.user.username}\`)`;
 
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
@@ -140,7 +140,7 @@ async function updateStatus() {
         // Update Bot Presence
         const count = available.length;
         client.user.setPresence({
-            activities: [{ name: `${count} staff${count === 1 ? "" : "s"}`, type: ActivityType.Watching }],
+            activities: [{ name: `\( {count} staff \){count === 1 ? "" : "s"} available`, type: ActivityType.Watching }],
             status: 'online'
         });
 
@@ -153,8 +153,8 @@ async function updateStatus() {
                 url: "https://discord.gg/ha7K8ngyex"
             })
             .addFields(
-                { name: 'Available Staffs:', value: available.join('\n') || "*No staff available.*" },
-                { name: 'Unavailable Staffs:', value: unavailable.join('\n') || "*No staff unavailable.*" }
+                { name: 'Available Staff:', value: available.join('\n') || "*No staff available.*" },
+                { name: 'Unavailable Staff:', value: unavailable.join('\n') || "*No staff unavailable.*" }
             )
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
@@ -162,10 +162,11 @@ async function updateStatus() {
         const newCycle = cycleCount >= MAX_CYCLES;
 
         if (newCycle) {
+            console.log("Starting new cycle: Clearing channel...");
             await clearChannelMessages(channel);
             const msg = await channel.send({ embeds: [embed] });
             statusMessageId = msg.id;
-            cycleCount = 1;
+            cycleCount = 0;  // Reset to 0 since we increment at the beginning
         } else {
             try {
                 if (!statusMessageId) {
@@ -175,7 +176,8 @@ async function updateStatus() {
                     const msg = await channel.messages.fetch(statusMessageId);
                     await msg.edit({ embeds: [embed] });
                 }
-            } catch {
+            } catch (err) {
+                console.error("Failed to edit existing message, sending new one:", err);
                 const msg = await channel.send({ embeds: [embed] });
                 statusMessageId = msg.id;
             }
