@@ -125,7 +125,9 @@ async function updateStatus() {
                 const member = await guild.members.fetch(id);
                 const status = member.presence?.status || 'offline';
 
-                const line = `\( {getEmoji(status)} <@ \){member.id}> (\`${member.user.username}\`)`;
+                // --- FIX: Using correct template literal syntax for the list item ---
+                const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
+                // --- END FIX ---
 
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
@@ -139,10 +141,12 @@ async function updateStatus() {
 
         // Update Bot Presence
         const count = available.length;
+        // --- FIX: Using correct template literal syntax for the activity name ---
         client.user.setPresence({
-            activities: [{ name: `\( {count} staff \){count === 1 ? "" : "s"} available`, type: ActivityType.Watching }],
+            activities: [{ name: `${count} staff${count === 1 ? "" : "s"} available`, type: ActivityType.Watching }],
             status: 'online'
         });
+        // --- END FIX ---
 
         const embed = new EmbedBuilder()
             .setColor(0x808080)
