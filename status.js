@@ -42,10 +42,8 @@ const client = new Client({
 let statusMessageId = null;
 let cycleCount = 0;
 
-// CALCULATIONS:
-// Interval: 20 seconds
-// 1 Hour = 3600 seconds
-// 3600 / 20 = 180 cycles
+// CALCULATIONS for 1 Hour:
+// Interval: 20 seconds. 3600s / 20s = 180 cycles.
 const MAX_CYCLES = 180; 
 const INTERVAL_MS = 20000;
 
@@ -60,25 +58,24 @@ function getEmoji(status) {
 
 async function clearChannelMessages(channel) {
     try {
-        console.log('🧹 Clearing channel...');
-        let deleted;
+        console.log('🧹 Clearing channel for the hourly reset...');
+        let fetched;
         do {
-            // Fetch messages and delete them in bulk where possible
-            deleted = await channel.messages.fetch({ limit: 100 });
+            fetched = await channel.messages.fetch({ limit: 100 });
             
-            // Filter messages older than 14 days (cannot be bulk deleted)
             const now = Date.now();
             const twoWeeksAgo = now - 1209600000;
-            const recent = deleted.filter(m => m.createdTimestamp > twoWeeksAgo);
-            const old = deleted.filter(m => m.createdTimestamp <= twoWeeksAgo);
+            const recent = fetched.filter(m => m.createdTimestamp > twoWeeksAgo);
+            const old = fetched.filter(m => m.createdTimestamp <= twoWeeksAgo);
 
-            if (recent.size > 0) await channel.bulkDelete(recent);
+            if (recent.size > 0) await channel.bulkDelete(recent, true);
             
-            // Delete old messages manually
             for (const msg of old.values()) {
                 await msg.delete().catch(() => {});
+                // Short delay to prevent rate limiting on old messages
+                await new Promise(res => setTimeout(res, 250));
             }
-        } while (deleted.size >= 10); // Continue if there are still messages
+        } while (fetched.size >= 1);
 
         console.log('✅ Channel cleared.');
     } catch (error) {
@@ -93,7 +90,7 @@ async function updateStatus() {
         const channel = await client.channels.fetch(config.channelId);
         if (!channel) return;
 
-        // Reset Logic: If cycle reaches MAX or no message ID exists, clear and restart
+        // Reset Logic: Triggered every 180 cycles (1 hour)
         if (cycleCount >= MAX_CYCLES || !statusMessageId) {
             await clearChannelMessages(channel);
             statusMessageId = null; 
@@ -106,6 +103,7 @@ async function updateStatus() {
 
         for (const id of config.staffIds) {
             try {
+                // withPresences: true ensures we get the most accurate status
                 const member = await guild.members.fetch({ user: id, withPresences: true });
                 const status = member.presence?.status || 'offline';
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
@@ -120,8 +118,14 @@ async function updateStatus() {
             }
         }
 
-        // Update Bot Activity
-        client.user.setActivity(`${available.length} staff available`, { type: ActivityType.Watching });
+        const count = available.length;
+        client.user.setPresence({
+            activities: [{ 
+                name: `${count} staff${count === 1 ? "" : "s"} available`, 
+                type: ActivityType.Watching 
+            }],
+            status: 'online'
+        });
 
         const embed = new EmbedBuilder()
             .setColor(0x808080)
@@ -135,18 +139,20 @@ async function updateStatus() {
                 { name: 'Available Staff:', value: available.join('\n') || "*No staff available.*" },
                 { name: 'Unavailable Staff:', value: unavailable.join('\n') || "*No staff unavailable.*" }
             )
-            .setFooter({ text: 'Updates every 20s • Resets every hour' })
+            .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
+        // If it's a new cycle or the message was deleted, send a new one
         if (!statusMessageId) {
             const msg = await channel.send({ embeds: [embed] });
             statusMessageId = msg.id;
+            console.log(`Created new status message: ${statusMessageId}`);
         } else {
+            // Otherwise, edit the existing message
             const msg = await channel.messages.fetch(statusMessageId).catch(() => null);
             if (msg) {
                 await msg.edit({ embeds: [embed] });
             } else {
-                // If message was manually deleted by someone, send a new one
                 const newMsg = await channel.send({ embeds: [embed] });
                 statusMessageId = newMsg.id;
             }
