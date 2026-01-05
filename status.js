@@ -108,10 +108,12 @@ async function updateStatus() {
                 const status = member.presence?.status || 'offline';
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
 
-                if (['online', 'idle', 'dnd'].includes(status)) {
+                if (['online', 'idle'].includes(status)) {
                     available.push(line);
+                } else if (['dnd'].includes(status)) {
+                    unavailable.push(line)
                 } else {
-                    unavailable.push(line);
+                   unavailable.push(line);
                 }
             } catch {
                 unavailable.push(`❌ <@${id}> (\`User Data Unavailable\`)`);
