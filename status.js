@@ -2,10 +2,14 @@ require('dotenv').config();
 const { 
     Client, 
     GatewayIntentBits, 
-    Partials, 
     EmbedBuilder, 
     ActivityType 
 } = require('discord.js');
+
+if (!process.env.DISCORD_TOKEN) {
+    console.error("❌ ERROR: DISCORD_TOKEN is missing from .env");
+    process.exit(1);
+}
 
 const config = {
     staffIds: [
@@ -19,8 +23,7 @@ const config = {
         offline: '<:offline:1446211386718949497>',
         dnd: '<:dnd:1446211384818925700>',
         online: '<:online:1446211377848123484>',
-        idle: '<:idle:1446211381354434693>',
-        default: '⚫'
+        idle: '<:idle:1446211381354434693>'
     },
     token: process.env.DISCORD_TOKEN
 };
@@ -30,6 +33,7 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildPresences,
         GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages
     ]
 });
 
@@ -49,7 +53,7 @@ async function updateStatus() {
     if (!client.isReady()) return;
 
     try {
-        const channel = await client.channels.fetch(config.channelId);
+        const channel = await client.channels.fetch(config.channelId).catch(() => null);
         if (!channel) return;
 
         const guild = channel.guild;
@@ -62,7 +66,7 @@ async function updateStatus() {
                 const status = member.presence?.status || 'offline';
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
 
-                // Logic updated: DND is now considered unavailable
+                // DND is now categorized as unavailable per your request
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
                 } else {
@@ -73,7 +77,6 @@ async function updateStatus() {
             }
         }
 
-        // Fixed pluralization of "staff"
         const count = available.length;
         client.user.setPresence({
             activities: [{ 
@@ -92,25 +95,33 @@ async function updateStatus() {
                 url: "https://discord.gg/ha7K8ngyex"
             })
             .addFields(
-                { name: 'Available Staff:', value: available.join('\n') || "*No staff currently active.*" },
-                { name: 'Unavailable Staff:', value: unavailable.join('\n') || "*Everyone is online!*" }
+                { name: 'Available Staff:', value: available.join('\n') || "*No staff available.*" },
+                { name: 'Unavailable Staff:', value: unavailable.join('\n') || "*No staff unavailable.*" }
             )
-            .setFooter({ text: 'Auto-updates every 20 seconds' })
+            .setFooter({ text: 'Status last updated' }) // Restored footer text
             .setTimestamp();
 
-        // EDIT LOGIC: Search for the existing message instead of deleting
+        // Editing logic: Reuse message if possible
         if (statusMessageId) {
             try {
                 const msg = await channel.messages.fetch(statusMessageId);
                 await msg.edit({ embeds: [embed] });
-            } catch (err) {
-                // If message was manually deleted, send a new one
+            } catch {
                 const newMsg = await channel.send({ embeds: [embed] });
                 statusMessageId = newMsg.id;
             }
         } else {
-            const newMsg = await channel.send({ embeds: [embed] });
-            statusMessageId = newMsg.id;
+            // Check for an existing bot message on startup to prevent double-posting
+            const recentMessages = await channel.messages.fetch({ limit: 5 });
+            const oldBotMsg = recentMessages.find(m => m.author.id === client.user.id);
+            
+            if (oldBotMsg) {
+                statusMessageId = oldBotMsg.id;
+                await oldBotMsg.edit({ embeds: [embed] });
+            } else {
+                const newMsg = await channel.send({ embeds: [embed] });
+                statusMessageId = newMsg.id;
+            }
         }
 
     } catch (err) {
