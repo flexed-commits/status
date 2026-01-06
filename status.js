@@ -1,38 +1,127 @@
-import discord
-from discord.ext import tasks, commands
-import asyncio
+require('dotenv').config();
+const { 
+    Client, 
+    GatewayIntentBits, 
+    Partials, 
+    EmbedBuilder, 
+    ActivityType 
+} = require('discord.js');
 
-class MyBot(commands.Bot):
-    def __init__(self):
-        super().__init__(command_prefix="!", intents=discord.Intents.all())
+const config = {
+    staffIds: [
+        '1081876265683927080', '1403084314819825787', '1193415556402008169',
+        '1317831363474227251', '1408294418695589929', '1355792114818224178',
+        '1231563118455554119', '1033399411130245190', '1180098931280064562',
+        '1228377961569325107'
+    ],
+    channelId: '1445693527274295378',
+    emojis: {
+        offline: '<:offline:1446211386718949497>',
+        dnd: '<:dnd:1446211384818925700>',
+        online: '<:online:1446211377848123484>',
+        idle: '<:idle:1446211381354434693>',
+        default: '⚫'
+    },
+    token: process.env.DISCORD_TOKEN
+};
 
-    async def on_ready(self):
-        print(f'Logged in as {self.user}')
-        # Start the background task
-        self.update_stats.start()
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMembers,
+    ]
+});
 
-    @tasks.loop(seconds=20)
-    async def update_stats(self):
-        channel = self.get_channel(1234567890) # Replace with your Channel ID
-        if channel:
-            # Simple logic to find or create the message
-            # In a real bot, you might save the message_id to a file/database
-            content = f"Last updated: <t:{int(asyncio.get_event_loop().time())}:R>"
-            
-            # This is a basic example; for a specific command, see below
-            print("Updating message...")
+let statusMessageId = null;
+const INTERVAL_MS = 20000;
 
-    @commands.command()
-    async def monitor(self, ctx):
-        # 1. Send the initial message
-        msg = await ctx.send("Starting monitor...")
-        
-        # 2. Loop to edit it
-        while True:
-            await asyncio.sleep(20)
-            # 3. Use .edit() instead of .send()
-            await msg.edit(content=f"Updated 20s ago. Next update in 20s.")
+function getEmoji(status) {
+    switch (status) {
+        case 'online': return config.emojis.online;
+        case 'idle': return config.emojis.idle;
+        case 'dnd': return config.emojis.dnd;
+        default: return config.emojis.offline;
+    }
+}
 
-# Run the bot
-# bot = MyBot()
-# bot.run('YOUR_TOKEN')
+async function updateStatus() {
+    if (!client.isReady()) return;
+
+    try {
+        const channel = await client.channels.fetch(config.channelId);
+        if (!channel) return;
+
+        const guild = channel.guild;
+        const available = [];
+        const unavailable = [];
+
+        for (const id of config.staffIds) {
+            try {
+                const member = await guild.members.fetch({ user: id, withPresences: true });
+                const status = member.presence?.status || 'offline';
+                const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
+
+                // Logic updated: DND is now considered unavailable
+                if (['online', 'idle'].includes(status)) {
+                    available.push(line);
+                } else {
+                    unavailable.push(line);
+                }
+            } catch {
+                unavailable.push(`❌ <@${id}> (\`User Data Unavailable\`)`);
+            }
+        }
+
+        // Fixed pluralization of "staff"
+        const count = available.length;
+        client.user.setPresence({
+            activities: [{ 
+                name: `${count} staff member${count === 1 ? "" : "s"} available`, 
+                type: ActivityType.Watching 
+            }],
+            status: 'online'
+        });
+
+        const embed = new EmbedBuilder()
+            .setColor(0x808080)
+            .setTitle('👥 Staff Status Overview')
+            .setAuthor({
+                name: "👑 Shivam's Discord",
+                iconURL: "https://cdn.discordapp.com/icons/1349281907765936188/7f90f5ba832e7672d4f55eb0c6017813.png",
+                url: "https://discord.gg/ha7K8ngyex"
+            })
+            .addFields(
+                { name: 'Available Staff:', value: available.join('\n') || "*No staff currently active.*" },
+                { name: 'Unavailable Staff:', value: unavailable.join('\n') || "*Everyone is online!*" }
+            )
+            .setFooter({ text: 'Auto-updates every 20 seconds' })
+            .setTimestamp();
+
+        // EDIT LOGIC: Search for the existing message instead of deleting
+        if (statusMessageId) {
+            try {
+                const msg = await channel.messages.fetch(statusMessageId);
+                await msg.edit({ embeds: [embed] });
+            } catch (err) {
+                // If message was manually deleted, send a new one
+                const newMsg = await channel.send({ embeds: [embed] });
+                statusMessageId = newMsg.id;
+            }
+        } else {
+            const newMsg = await channel.send({ embeds: [embed] });
+            statusMessageId = newMsg.id;
+        }
+
+    } catch (err) {
+        console.error("Error in updateStatus():", err);
+    }
+}
+
+client.on('ready', () => {
+    console.log(`✓ Bot logged in as ${client.user.tag}`);
+    updateStatus();
+    setInterval(updateStatus, INTERVAL_MS);
+});
+
+client.login(config.token);
