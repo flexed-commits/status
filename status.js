@@ -19,6 +19,8 @@ const config = {
         '1228377961569325107'
     ],
     channelId: '1445693527274295378',
+    // Always start by trying to edit this specific message
+    targetMessageId: '1458157186894139535', 
     emojis: {
         offline: '<:offline:1446211386718949497>',
         dnd: '<:dnd:1446211384818925700>',
@@ -37,7 +39,10 @@ const client = new Client({
     ]
 });
 
-let statusMessageId = null;
+client.setMaxListeners(20);
+
+let statusMessageId = config.targetMessageId; 
+let isIntervalStarted = false; 
 const INTERVAL_MS = 20000;
 
 function getEmoji(status) {
@@ -66,7 +71,6 @@ async function updateStatus() {
                 const status = member.presence?.status || 'offline';
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
 
-                // DND is now categorized as unavailable per your request
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
                 } else {
@@ -98,30 +102,18 @@ async function updateStatus() {
                 { name: 'Available Staff:', value: available.join('\n') || "*No staff available.*" },
                 { name: 'Unavailable Staff:', value: unavailable.join('\n') || "*No staff unavailable.*" }
             )
-            .setFooter({ text: 'Status last updated' }) // Restored footer text
+            .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        // Editing logic: Reuse message if possible
-        if (statusMessageId) {
-            try {
-                const msg = await channel.messages.fetch(statusMessageId);
-                await msg.edit({ embeds: [embed] });
-            } catch {
-                const newMsg = await channel.send({ embeds: [embed] });
-                statusMessageId = newMsg.id;
-            }
-        } else {
-            // Check for an existing bot message on startup to prevent double-posting
-            const recentMessages = await channel.messages.fetch({ limit: 5 });
-            const oldBotMsg = recentMessages.find(m => m.author.id === client.user.id);
-            
-            if (oldBotMsg) {
-                statusMessageId = oldBotMsg.id;
-                await oldBotMsg.edit({ embeds: [embed] });
-            } else {
-                const newMsg = await channel.send({ embeds: [embed] });
-                statusMessageId = newMsg.id;
-            }
+        // EDIT LOGIC: Targeted at your specific ID
+        try {
+            const msg = await channel.messages.fetch(statusMessageId);
+            await msg.edit({ embeds: [embed] });
+        } catch (err) {
+            // If the specific message ID doesn't exist, send a new one and update the tracking ID
+            console.log("⚠️ Target message not found. Sending a new one...");
+            const newMsg = await channel.send({ embeds: [embed] });
+            statusMessageId = newMsg.id;
         }
 
     } catch (err) {
@@ -129,10 +121,14 @@ async function updateStatus() {
     }
 }
 
-client.on('ready', () => {
+client.once('ready', () => {
     console.log(`✓ Bot logged in as ${client.user.tag}`);
-    updateStatus();
-    setInterval(updateStatus, INTERVAL_MS);
+    
+    if (!isIntervalStarted) {
+        updateStatus();
+        setInterval(updateStatus, INTERVAL_MS);
+        isIntervalStarted = true;
+    }
 });
 
 client.login(config.token);
