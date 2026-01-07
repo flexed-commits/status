@@ -38,7 +38,6 @@ const client = new Client({
     ]
 });
 
-// Increases limit to prevent the AsyncEventEmitter memory leak warning
 client.setMaxListeners(20);
 
 let statusMessageId = config.targetMessageId; 
@@ -71,7 +70,7 @@ async function updateStatus() {
                 const status = member.presence?.status || 'offline';
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
 
-                // DND is unavailable
+                // DND is unavailable per previous request
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
                 } else {
@@ -83,12 +82,15 @@ async function updateStatus() {
         }
 
         const count = available.length;
+        
+        // --- IMPLEMENTED CUSTOM STATUS ---
         client.user.setPresence({
-            activities: [{ 
-                name: `${count} staff member${count === 1 ? "" : "s"} available`, 
-                type: ActivityType.Watching 
+            activities: [{
+                name: 'custom status', 
+                type: ActivityType.Custom, 
+                state: `${count} staff available` 
             }],
-            status: 'online'
+            status: 'online',
         });
 
         const embed = new EmbedBuilder()
@@ -106,15 +108,12 @@ async function updateStatus() {
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        // Editing your specific message
         try {
             const msg = await channel.messages.fetch(statusMessageId);
             await msg.edit({ embeds: [embed] });
         } catch (err) {
-            // Re-post if the specific message is missing
             const newMsg = await channel.send({ embeds: [embed] });
             statusMessageId = newMsg.id;
-            console.log(`New status message sent: ${statusMessageId}`);
         }
 
     } catch (err) {
@@ -122,7 +121,6 @@ async function updateStatus() {
     }
 }
 
-// Fixed the DeprecationWarning by using 'clientReady'
 client.once('clientReady', () => {
     console.log(`✓ Bot logged in as ${client.user.tag}`);
     
