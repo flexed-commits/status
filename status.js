@@ -19,7 +19,6 @@ const config = {
         '1228377961569325107'
     ],
     channelId: '1445693527274295378',
-    // Always start by trying to edit this specific message
     targetMessageId: '1458157186894139535', 
     emojis: {
         offline: '<:offline:1446211386718949497>',
@@ -39,6 +38,7 @@ const client = new Client({
     ]
 });
 
+// Increases limit to prevent the AsyncEventEmitter memory leak warning
 client.setMaxListeners(20);
 
 let statusMessageId = config.targetMessageId; 
@@ -71,6 +71,7 @@ async function updateStatus() {
                 const status = member.presence?.status || 'offline';
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
 
+                // DND is unavailable
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
                 } else {
@@ -105,15 +106,15 @@ async function updateStatus() {
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        // EDIT LOGIC: Targeted at your specific ID
+        // Editing your specific message
         try {
             const msg = await channel.messages.fetch(statusMessageId);
             await msg.edit({ embeds: [embed] });
         } catch (err) {
-            // If the specific message ID doesn't exist, send a new one and update the tracking ID
-            console.log("⚠️ Target message not found. Sending a new one...");
+            // Re-post if the specific message is missing
             const newMsg = await channel.send({ embeds: [embed] });
             statusMessageId = newMsg.id;
+            console.log(`New status message sent: ${statusMessageId}`);
         }
 
     } catch (err) {
@@ -121,7 +122,8 @@ async function updateStatus() {
     }
 }
 
-client.once('ready', () => {
+// Fixed the DeprecationWarning by using 'clientReady'
+client.once('clientReady', () => {
     console.log(`✓ Bot logged in as ${client.user.tag}`);
     
     if (!isIntervalStarted) {
