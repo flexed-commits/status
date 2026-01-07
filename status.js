@@ -3,7 +3,8 @@ const {
     Client, 
     GatewayIntentBits, 
     EmbedBuilder, 
-    ActivityType 
+    ActivityType,
+    Events // Using the Events enum for best practice
 } = require('discord.js');
 
 if (!process.env.DISCORD_TOKEN) {
@@ -19,7 +20,7 @@ const config = {
         '1228377961569325107'
     ],
     channelId: '1445693527274295378',
-    targetMessageId: '1458157186894139535', 
+    targetMessageId: '1458467286187770071', // Fixed target message
     emojis: {
         offline: '<:offline:1446211386718949497>',
         dnd: '<:dnd:1446211384818925700>',
@@ -33,15 +34,10 @@ const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages
+        GatewayIntentBits.GuildMembers
     ]
 });
 
-client.setMaxListeners(20);
-
-let statusMessageId = config.targetMessageId; 
-let isIntervalStarted = false; 
 const INTERVAL_MS = 20000;
 
 function getEmoji(status) {
@@ -57,9 +53,7 @@ async function updateStatus() {
     if (!client.isReady()) return;
 
     try {
-        const channel = await client.channels.fetch(config.channelId).catch(() => null);
-        if (!channel) return;
-
+        const channel = await client.channels.fetch(config.channelId);
         const guild = channel.guild;
         const available = [];
         const unavailable = [];
@@ -70,7 +64,6 @@ async function updateStatus() {
                 const status = member.presence?.status || 'offline';
                 const line = `${getEmoji(status)} <@${member.id}> (\`${member.user.username}\`)`;
 
-                // DND is unavailable per previous request
                 if (['online', 'idle'].includes(status)) {
                     available.push(line);
                 } else {
@@ -81,14 +74,11 @@ async function updateStatus() {
             }
         }
 
-        const count = available.length;
-        
-        // --- IMPLEMENTED CUSTOM STATUS ---
         client.user.setPresence({
             activities: [{
                 name: 'custom status', 
                 type: ActivityType.Custom, 
-                state: `${count} staff available` 
+                state: `${available.length} staff available` 
             }],
             status: 'online',
         });
@@ -108,27 +98,22 @@ async function updateStatus() {
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        try {
-            const msg = await channel.messages.fetch(statusMessageId);
-            await msg.edit({ embeds: [embed] });
-        } catch (err) {
-            const newMsg = await channel.send({ embeds: [embed] });
-            statusMessageId = newMsg.id;
-        }
+        // BRUTE FORCE EDIT: No fallback to .send()
+        const msg = await channel.messages.fetch(config.targetMessageId);
+        await msg.edit({ embeds: [embed] });
+        console.log(`✓ Updated message ${config.targetMessageId}`);
 
     } catch (err) {
-        console.error("Error in updateStatus():", err);
+        // If the message isn't found or API is down, we just log it and wait for next interval
+        console.error(`❌ Edit failed for ${config.targetMessageId}. Retrying in 20s...`);
     }
 }
 
-client.once('clientReady', () => {
+// Using the correct ClientReady event for v15
+client.once(Events.ClientReady, () => {
     console.log(`✓ Bot logged in as ${client.user.tag}`);
-    
-    if (!isIntervalStarted) {
-        updateStatus();
-        setInterval(updateStatus, INTERVAL_MS);
-        isIntervalStarted = true;
-    }
+    updateStatus();
+    setInterval(updateStatus, INTERVAL_MS);
 });
 
 client.login(config.token);
