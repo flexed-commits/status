@@ -27,7 +27,7 @@ const config = {
         online: '<:online:1446211377848123484>',
         idle: '<:idle:1446211381354434693>'
     },
-    token: process.env.DISCORD_TOKEN
+    token: process.env.DISCORD_BOT_TOKEN
 };
 
 const client = new Client({
