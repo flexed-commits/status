@@ -7,8 +7,8 @@ const {
     Events // Using the Events enum for best practice
 } = require('discord.js');
 
-if (!process.env.DISCORD_TOKEN) {
-    console.error("❌ ERROR: DISCORD_TOKEN is missing from .env");
+if (!process.env.DISCORD_BOT_TOKEN) {
+    console.error("❌ ERROR: DISCORD_BOT_TOKEN is missing from .env");
     process.exit(1);
 }
 
