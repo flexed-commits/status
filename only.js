@@ -21,10 +21,10 @@ const config = {
     channelId: '1460668026155176021',
     targetMessageId: '1464325435914457174', // Updated target message
     emojis: {
-        offline: '<:offline:1464325959049285723>',
-        dnd: '<:dnd:1464325955945234434>',
-        online: '<:online:1464325950669066425>',
-        idle: '<:idle:1464325953495761033>'
+        offline: '<:offline:1464327975351877797>',
+        dnd: '<:dnd:1464327984474488924>',
+        online: '<:online:1464327977876590602>',
+        idle: '<:idle:1464327981240422503>'
     },
     token: process.env.DISCORD_BOT_TOKEN1
 };
@@ -86,9 +86,8 @@ async function updateStatus() {
             .setColor(0x808080)
             .setTitle('👥 Staff Status Overview')
             .setAuthor({
-                name: "👑 Shivam's Discord",
-                iconURL: "https://cdn.discordapp.com/icons/1349281907765936188/7f90f5ba832e7672d4f55eb0c6017813.png",
-                url: "https://discord.gg/ha7K8ngyex"
+                name: "flexedAI Support",
+                url: "https://discord.gg/XMvPq7W5N4"
             })
             .addFields(
                 { name: 'Available Staff:', value: available.join('\n') || "*No staff available.*" },
@@ -100,15 +99,15 @@ async function updateStatus() {
         // Updated to edit the new target message
         const msg = await channel.messages.fetch(config.targetMessageId);
         await msg.edit({ embeds: [embed] });
-        console.log(`✓ Updated message ${config.targetMessageId}`);
+        console.log(`✅Updated message ${config.targetMessageId}`);
 
     } catch (err) {
-        console.error(`❌ Edit failed for ${config.targetMessageId}. Retrying in 20s...`);
+        console.error(`❌ Edit failed for ${config.targetMessageId}. Retrying in 15s...`);
     }
 }
 
 client.once(Events.ClientReady, () => {
-    console.log(`✓ Bot logged in as ${client.user.tag}`);
+    console.log(`Bot logged in as ${client.user.tag}`);
     updateStatus();
     setInterval(updateStatus, INTERVAL_MS);
 });
