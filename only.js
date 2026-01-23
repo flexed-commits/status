@@ -18,12 +18,13 @@ const config = {
         '1193415556402008169',
         '1228377961569325107'
     ],
-    channelId: '1460668026155176021', // Updated to the channel ID where messages will be sent
+    channelId: '1460668026155176021',
+    targetMessageId: '1464325435914457174', // Updated target message
     emojis: {
-        offline: '<:offline:1446211386718949497>',
-        dnd: '<:dnd:1446211384818925700>',
-        online: '<:online:1446211377848123484>',
-        idle: '<:idle:1446211381354434693>'
+        offline: '<:offline:1464325959049285723>',
+        dnd: '<:dnd:1464325955945234434>',
+        online: '<:online:1464325950669066425>',
+        idle: '<:idle:1464325953495761033>'
     },
     token: process.env.DISCORD_BOT_TOKEN1
 };
@@ -36,7 +37,7 @@ const client = new Client({
     ]
 });
 
-const INTERVAL_MS = 20000;
+const INTERVAL_MS = 15000;
 
 function getEmoji(status) {
     switch (status) {
@@ -96,12 +97,13 @@ async function updateStatus() {
             .setFooter({ text: 'Status last updated' })
             .setTimestamp();
 
-        // Send a new message instead of editing
-        await channel.send({ embeds: [embed] });
-        console.log(`✓ Sent new status message to channel ${config.channelId}`);
+        // Updated to edit the new target message
+        const msg = await channel.messages.fetch(config.targetMessageId);
+        await msg.edit({ embeds: [embed] });
+        console.log(`✓ Updated message ${config.targetMessageId}`);
 
     } catch (err) {
-        console.error(`❌ Failed to send message. Retrying in 20s...`, err.message);
+        console.error(`❌ Edit failed for ${config.targetMessageId}. Retrying in 20s...`);
     }
 }
 
