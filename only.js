@@ -18,7 +18,7 @@ const config = {
         '1193415556402008169',
         '1228377961569325107'
     ],
-    channelId: '1460574191072972913', // Updated to the channel ID where messages will be sent
+    channelId: '1460668026155176021', // Updated to the channel ID where messages will be sent
     emojis: {
         offline: '<:offline:1446211386718949497>',
         dnd: '<:dnd:1446211384818925700>',
