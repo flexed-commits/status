@@ -7,7 +7,7 @@ const {
     Events
 } = require('discord.js');
 
-if (!process.env.DISCORD_BOT_TOKEN) {
+if (!process.env.DISCORD_BOT_TOKEN1) {
     console.error("❌ ERROR: DISCORD_BOT_TOKEN is missing from .env");
     process.exit(1);
 }
@@ -25,7 +25,7 @@ const config = {
         online: '<:online:1446211377848123484>',
         idle: '<:idle:1446211381354434693>'
     },
-    token: process.env.DISCORD_BOT_TOKEN
+    token: process.env.DISCORD_BOT_TOKEN1
 };
 
 const client = new Client({
