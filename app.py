@@ -175,7 +175,9 @@ class DiscordBot(discord.Client):
         self.start_scheduler()
         
         # Start status updates
-        self.status_updater.start()
+        if not self.status_updater.is_running():
+            self.status_updater.start()
+            print('[STATUS] Status updater started')
     
     def start_scheduler(self):
         setup_complete = db.get('setupComplete', False)
@@ -215,6 +217,7 @@ client = DiscordBot()
 
 async def update_status(bot: DiscordBot):
     if not bot.is_ready():
+        print('[STATUS] Bot not ready yet')
         return
     
     try:
@@ -222,30 +225,36 @@ async def update_status(bot: DiscordBot):
         status_message_id = db.get('statusMessageId')
         staff_ids = db.get_staff_ids()
         
+        print(f'[STATUS] Starting update - Channel: {status_channel_id}, Message: {status_message_id}, Staff count: {len(staff_ids)}')
+        
         if not status_channel_id or not status_message_id:
+            print('[STATUS] Status tracking not configured')
             return  # Status tracking not configured
         
         channel = bot.get_channel(int(status_channel_id))
         if not channel:
+            print(f'[STATUS] Fetching channel {status_channel_id}')
             channel = await bot.fetch_channel(int(status_channel_id))
         
         guild = channel.guild
         available = []
         unavailable = []
         
-        # Force fetch all members to ensure we have presence data
-        await guild.chunk()
+        print(f'[STATUS] Processing {len(staff_ids)} staff members')
         
         for user_id in staff_ids:
             try:
-                # Use get_member instead of fetch_member to get cached presence
+                # Use get_member to get cached member with presence
                 member = guild.get_member(int(user_id))
                 if not member:
+                    print(f'[STATUS] Member {user_id} not in cache, fetching...')
                     member = await guild.fetch_member(int(user_id))
                 
                 # Get presence status
-                status = str(member.status) if member.status else 'offline'
+                status = str(member.status) if hasattr(member, 'status') and member.status else 'offline'
                 line = f"{get_emoji(status)} <@{member.id}> (`{member.name}`)"
+                
+                print(f'[STATUS] {member.name} ({user_id}): {status}')
                 
                 if status in ['online', 'idle']:
                     available.append(line)
@@ -254,6 +263,8 @@ async def update_status(bot: DiscordBot):
             except Exception as e:
                 print(f"[STATUS] Error fetching member {user_id}: {e}")
                 unavailable.append(f"❌ <@{user_id}> (`User Data Unavailable`)")
+        
+        print(f'[STATUS] Available: {len(available)}, Unavailable: {len(unavailable)}')
         
         await bot.change_presence(
             activity=discord.CustomActivity(name=f"{len(available)} staff available"),
@@ -282,12 +293,15 @@ async def update_status(bot: DiscordBot):
         embed.set_footer(text='Status last updated')
         embed.timestamp = datetime.now(timezone.utc)
         
+        print(f'[STATUS] Fetching message {status_message_id}')
         msg = await channel.fetch_message(int(status_message_id))
         await msg.edit(embed=embed)
         print(f'✓ Updated status message {status_message_id}')
         
     except Exception as err:
         print(f'❌ Status update failed: {err}')
+        import traceback
+        traceback.print_exc()
 
 # --- MESSAGE COUNTING ---
 
