@@ -11,7 +11,7 @@ const {
     Events,
     PermissionFlagsBits
 } = require('discord.js');
-const sqlite3InitModule = require('@sqlite.org/sqlite-wasm');
+const sqlite3InitModule = require('@sqlite.org/sqlite-wasm').default || require('@sqlite.org/sqlite-wasm');
 
 // --- CONFIGURATION ---
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
