@@ -1,24 +1,3 @@
-/**
- * Discord Bot: Weekly Leaderboard + Staff Status Tracker
- * 
- * Features:
- * - Automated weekly leaderboard (Saturday 6:30 PM GMT)
- * - Real-time staff status tracking with embed updates
- * - SQLite database for persistent storage
- * - Slash commands for setup and management
- * 
- * Requirements:
- * - Node.js v18+
- * - discord.js v14
- * - better-sqlite3
- * - dotenv
- * 
- * Setup:
- * 1. npm install discord.js better-sqlite3 dotenv
- * 2. Create .env file with DISCORD_BOT_TOKEN and DISCORD_CLIENT_ID
- * 3. node index.js
- */
-
 require('dotenv').config();
 const { 
     Client, 
@@ -32,80 +11,115 @@ const {
     Events,
     PermissionFlagsBits
 } = require('discord.js');
-const Database = require('better-sqlite3');
+const sqlite3InitModule = require('@sqlite.org/sqlite-wasm');
 
 // --- CONFIGURATION ---
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const OWNER_ID = '1081876265683927080';
+const OWNER_ID = '1403084314819825787';
 
 if (!DISCORD_BOT_TOKEN || !DISCORD_CLIENT_ID) {
     console.error('❌ ERROR: DISCORD_BOT_TOKEN and DISCORD_CLIENT_ID must be set in .env file');
     process.exit(1);
 }
 
+let db;
+let dbHelpers;
+
 // --- DATABASE SETUP ---
-const db = new Database('bot_config.db');
+async function initDatabase() {
+    const sqlite3 = await sqlite3InitModule({
+        print: console.log,
+        printErr: console.error,
+    });
 
-// Initialize database tables
-db.exec(`
-    CREATE TABLE IF NOT EXISTS config (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    );
-    
-    CREATE TABLE IF NOT EXISTS staff_members (
-        user_id TEXT PRIMARY KEY,
-        added_at INTEGER DEFAULT (strftime('%s', 'now'))
-    );
-`);
-
-// Database helper functions
-const dbHelpers = {
-    get(key, defaultValue = null) {
-        const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key);
-        return row ? JSON.parse(row.value) : defaultValue;
-    },
-    
-    set(key, value) {
-        const stmt = db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)');
-        stmt.run(key, JSON.stringify(value));
-        console.log(`[DATABASE] Updated ${key}:`, value);
-    },
-    
-    getStaffIds() {
-        const rows = db.prepare('SELECT user_id FROM staff_members').all();
-        return rows.map(r => r.user_id);
-    },
-    
-    addStaffMember(userId) {
-        const stmt = db.prepare('INSERT OR IGNORE INTO staff_members (user_id) VALUES (?)');
-        stmt.run(userId);
-    },
-    
-    removeStaffMember(userId) {
-        const stmt = db.prepare('DELETE FROM staff_members WHERE user_id = ?');
-        stmt.run(userId);
+    if ('opfs' in sqlite3) {
+        db = new sqlite3.oo1.OpfsDb('/bot_config.db');
+        console.log('[DATABASE] Using OPFS (Origin Private File System) for persistent storage');
+    } else {
+        db = new sqlite3.oo1.DB('/bot_config.db', 'ct');
+        console.log('[DATABASE] Using in-memory database (data will not persist)');
     }
-};
 
-// Initialize default staff members if database is empty
-const defaultStaffIds = [
-    '1081876265683927080', '1403084314819825787', '1193415556402008169',
-    '1317831363474227251', '1408294418695589929', '1355792114818224178',
-    '1231563118455554119', '1033399411130245190', '1180098931280064562',
-    '1228377961569325107', '923488148875526144'
-];
+    // Initialize database tables
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        
+        CREATE TABLE IF NOT EXISTS staff_members (
+            user_id TEXT PRIMARY KEY,
+            added_at INTEGER DEFAULT (strftime('%s', 'now'))
+        );
+    `);
 
-if (dbHelpers.getStaffIds().length === 0) {
-    defaultStaffIds.forEach(id => dbHelpers.addStaffMember(id));
-    console.log('[DATABASE] Initialized default staff members');
-}
+    // Database helper functions
+    dbHelpers = {
+        get(key, defaultValue = null) {
+            const result = db.exec({
+                sql: 'SELECT value FROM config WHERE key = ?',
+                bind: [key],
+                returnValue: 'resultRows'
+            });
+            
+            if (result.length > 0) {
+                return JSON.parse(result[0][0]);
+            }
+            return defaultValue;
+        },
+        
+        set(key, value) {
+            db.exec({
+                sql: 'INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)',
+                bind: [key, JSON.stringify(value)]
+            });
+            console.log(`[DATABASE] Updated ${key}:`, value);
+        },
+        
+        getStaffIds() {
+            const result = db.exec({
+                sql: 'SELECT user_id FROM staff_members',
+                returnValue: 'resultRows'
+            });
+            return result.map(row => row[0]);
+        },
+        
+        addStaffMember(userId) {
+            db.exec({
+                sql: 'INSERT OR IGNORE INTO staff_members (user_id) VALUES (?)',
+                bind: [userId]
+            });
+        },
+        
+        removeStaffMember(userId) {
+            db.exec({
+                sql: 'DELETE FROM staff_members WHERE user_id = ?',
+                bind: [userId]
+            });
+        }
+    };
 
-// Initialize default configuration
-if (!dbHelpers.get('statusChannelId')) {
-    dbHelpers.set('statusChannelId', '1445693527274295378');
-    dbHelpers.set('statusMessageId', '1458467286187770071');
+    // Initialize default staff members if database is empty
+    const defaultStaffIds = [
+        '1081876265683927080', '1403084314819825787', '1193415556402008169',
+        '1317831363474227251', '1408294418695589929', '1355792114818224178',
+        '1231563118455554119', '1033399411130245190', '1180098931280064562',
+        '1228377961569325107', '923488148875526144'
+    ];
+
+    if (dbHelpers.getStaffIds().length === 0) {
+        defaultStaffIds.forEach(id => dbHelpers.addStaffMember(id));
+        console.log('[DATABASE] Initialized default staff members');
+    }
+
+    // Initialize default configuration
+    if (!dbHelpers.get('statusChannelId')) {
+        dbHelpers.set('statusChannelId', '1445693527274295378');
+        dbHelpers.set('statusMessageId', '1458467286187770071');
+    }
+
+    console.log('[DATABASE] Database initialized successfully');
 }
 
 const STATUS_UPDATE_INTERVAL = 20000; // 20 seconds
@@ -532,8 +546,11 @@ const client = new Client({
     partials: [Partials.Channel, Partials.GuildMember]
 });
 
-client.once(Events.ClientReady, () => {
+client.once(Events.ClientReady, async () => {
     console.log(`✓ Bot logged in as ${client.user.tag}`);
+    
+    // Initialize database first
+    await initDatabase();
     
     registerCommands();
     startScheduler(client);
@@ -788,25 +805,45 @@ Period: **${formatDate(sevenDaysAgo)}** to **${formatDate(today)}** (Last 7 days
             console.log('[SCHEDULER] Scheduler successfully cleared.');
         }
 
-        db.close();
+        if (db) {
+            db.close();
+            console.log('[DATABASE] Database closed.');
+        }
+        
         client.destroy();
         process.exit(0);
     }
 });
 
-// Graceful shutdown
+// Graceful shutdown handlers
 process.on('SIGINT', () => {
     console.log('\n[SHUTDOWN] Received SIGINT, closing database...');
-    db.close();
+    if (db) {
+        db.close();
+    }
     client.destroy();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
     console.log('\n[SHUTDOWN] Received SIGTERM, closing database...');
-    db.close();
+    if (db) {
+        db.close();
+    }
     client.destroy();
     process.exit(0);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('[ERROR] Uncaught Exception:', error);
+    if (db) {
+        db.close();
+    }
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 client.login(DISCORD_BOT_TOKEN).catch(err => {
