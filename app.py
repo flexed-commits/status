@@ -1,4 +1,3 @@
-
 import os
 import json
 import sqlite3
@@ -226,14 +225,25 @@ async def update_status(bot: DiscordBot):
         if not status_channel_id or not status_message_id:
             return  # Status tracking not configured
         
-        channel = await bot.fetch_channel(int(status_channel_id))
+        channel = bot.get_channel(int(status_channel_id))
+        if not channel:
+            channel = await bot.fetch_channel(int(status_channel_id))
+        
         guild = channel.guild
         available = []
         unavailable = []
         
+        # Force fetch all members to ensure we have presence data
+        await guild.chunk()
+        
         for user_id in staff_ids:
             try:
-                member = await guild.fetch_member(int(user_id))
+                # Use get_member instead of fetch_member to get cached presence
+                member = guild.get_member(int(user_id))
+                if not member:
+                    member = await guild.fetch_member(int(user_id))
+                
+                # Get presence status
                 status = str(member.status) if member.status else 'offline'
                 line = f"{get_emoji(status)} <@{member.id}> (`{member.name}`)"
                 
@@ -241,7 +251,8 @@ async def update_status(bot: DiscordBot):
                     available.append(line)
                 else:
                     unavailable.append(line)
-            except:
+            except Exception as e:
+                print(f"[STATUS] Error fetching member {user_id}: {e}")
                 unavailable.append(f"❌ <@{user_id}> (`User Data Unavailable`)")
         
         await bot.change_presence(
