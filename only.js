@@ -8,7 +8,7 @@ const {
 } = require('discord.js');
 
 if (!process.env.DISCORD_BOT_TOKEN1) {
-    console.error("❌ ERROR: DISCORD_BOT_TOKEN is missing from .env");
+    console.error("❌ ERROR: DISCORD_BOT_TOKEN1 is missing from .env");
     process.exit(1);
 }
 
