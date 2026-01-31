@@ -124,8 +124,8 @@ db = Database()
 def get_emoji(status: str) -> str:
     return EMOJIS.get(status, EMOJIS['offline'])
 
-def calculate_next_run_time() -> Tuple[int, int]:
-    """Calculates next Saturday at 6:30 PM GMT (18:30 UTC)"""
+def calculate_next_run_time() -> int:
+    """Calculates next Saturday at 6:30 PM GMT (18:30 UTC) and returns timestamp in milliseconds"""
     now_utc = datetime.now(timezone.utc)
 
     # Target: Saturday (5 in Python, 0=Monday) at 18:30 UTC (6:30 PM GMT)
@@ -153,13 +153,11 @@ def calculate_next_run_time() -> Tuple[int, int]:
         next_run += timedelta(days=days_ahead)
 
     timestamp = int(next_run.timestamp() * 1000)
-    delay = int((next_run - now_utc).total_seconds() * 1000)
 
     print(f'[SCHEDULER] Current time: {now_utc.strftime("%a, %d %b %Y %H:%M:%S UTC")}')
     print(f'[SCHEDULER] Next run time: {next_run.strftime("%a, %d %b %Y %H:%M:%S UTC")}')
-    print(f'[SCHEDULER] Days ahead: {days_ahead}, Delay: {delay/1000/60:.2f} minutes')
 
-    return timestamp, delay
+    return timestamp
 
 # --- BOT CLIENT ---
 
@@ -173,7 +171,6 @@ class DiscordBot(discord.Client):
 
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
-        self.scheduler_task = None
 
     async def setup_hook(self):
         await self.tree.sync()
@@ -182,47 +179,60 @@ class DiscordBot(discord.Client):
     async def on_ready(self):
         print(f'✓ Bot logged in as {self.user}')
 
-        # Start scheduler
-        self.start_scheduler()
+        # Initialize next run timestamp if not set
+        setup_complete = db.get('setupComplete', False)
+        if setup_complete:
+            next_run = db.get('nextRunTimestamp')
+            if not next_run:
+                timestamp = calculate_next_run_time()
+                db.set('nextRunTimestamp', timestamp)
+                print(f'[SCHEDULER] Initialized next run timestamp: {timestamp}')
+
+        # Start scheduler checker
+        if not self.scheduler_checker.is_running():
+            self.scheduler_checker.start()
+            print('[SCHEDULER] Scheduler checker started')
 
         # Start status updates
         if not self.status_updater.is_running():
             self.status_updater.start()
             print('[STATUS] Status updater started')
 
-    def start_scheduler(self):
+    @tasks.loop(seconds=30)  # Check every 30 seconds
+    async def scheduler_checker(self):
+        """Checks if it's time to run the leaderboard based on stored timestamp"""
         setup_complete = db.get('setupComplete', False)
-
+        
         if not setup_complete:
-            print('[SCHEDULER] Setup incomplete. Scheduler not started.')
             return
 
-        timestamp, delay = calculate_next_run_time()
-        db.set('nextRunTimestamp', timestamp)
+        next_run_timestamp = db.get('nextRunTimestamp')
+        if not next_run_timestamp:
+            print('[SCHEDULER] No next run timestamp found, calculating...')
+            next_run_timestamp = calculate_next_run_time()
+            db.set('nextRunTimestamp', next_run_timestamp)
+            return
 
-        next_run_date = datetime.fromtimestamp(timestamp/1000, timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
-        print(f'[SCHEDULER] Next leaderboard run: {next_run_date}')
-        print(f'[SCHEDULER] Delay: {delay / 1000 / 60:.2f} minutes ({delay / 1000:.2f} seconds)')
-
-        if self.scheduler_task:
-            self.scheduler_task.cancel()
-
-        self.scheduler_task = self.loop.create_task(self.run_scheduler(delay / 1000))
-
-    async def run_scheduler(self, delay: float):
-        print(f'[SCHEDULER] Waiting {delay:.2f} seconds until next run...')
-        await asyncio.sleep(delay)
-        try:
-            print('[SCHEDULER] Executing scheduled leaderboard update...')
-            await run_leaderboard_update(self, False, None)
-            print('[SCHEDULER] Scheduled leaderboard update completed successfully')
-        except Exception as error:
-            print(f'[SCHEDULER ERROR] Failed to run scheduled update: {error}')
-            import traceback
-            traceback.print_exc()
-        finally:
-            # Reschedule for next week
-            self.start_scheduler()
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        
+        # Check if we've passed the scheduled time
+        if now_ms >= next_run_timestamp:
+            print(f'[SCHEDULER] Time to run! Current: {now_ms}, Scheduled: {next_run_timestamp}')
+            try:
+                print('[SCHEDULER] Executing scheduled leaderboard update...')
+                await run_leaderboard_update(self, False, None)
+                print('[SCHEDULER] Scheduled leaderboard update completed successfully')
+                
+                # Calculate and set next run time
+                next_timestamp = calculate_next_run_time()
+                db.set('nextRunTimestamp', next_timestamp)
+                db.set('lastRunTimestamp', now_ms)
+                print(f'[SCHEDULER] Next run scheduled for: {datetime.fromtimestamp(next_timestamp/1000, timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")}')
+                
+            except Exception as error:
+                print(f'[SCHEDULER ERROR] Failed to run scheduled update: {error}')
+                import traceback
+                traceback.print_exc()
 
     @tasks.loop(seconds=STATUS_UPDATE_INTERVAL)
     async def status_updater(self):
@@ -362,7 +372,7 @@ async def run_leaderboard_update(bot: DiscordBot, is_test: bool = False, interac
             await interaction.response.send_message(error_msg, ephemeral=True)
         return
 
-    # Get guild - prioritize interaction guild, fallback to first guild
+    # Get guild - prioritize interaction guild, fallback to stored guild
     guild = None
     if interaction:
         guild = interaction.guild
@@ -464,7 +474,8 @@ Top 1 can change their server nickname once. Top 1 & 2 can have a custom role wi
             )
 
         if not is_test:
-            db.set('lastRunTimestamp', int(datetime.now(timezone.utc).timestamp() * 1000))
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            db.set('lastRunTimestamp', now_ms)
             print('[LEADERBOARD] Updated lastRunTimestamp')
 
     except Exception as error:
@@ -496,7 +507,7 @@ async def setup_auto_leaderboard(
         await interaction.response.send_message('Top count must be 1 or more.', ephemeral=True)
         return
 
-    timestamp, _ = calculate_next_run_time()
+    timestamp = calculate_next_run_time()
 
     db.set('setupComplete', True)
     db.set('guildId', str(interaction.guild_id))
@@ -506,8 +517,6 @@ async def setup_auto_leaderboard(
     db.set('sourceChannelId', str(from_channel.id))
     db.set('lastRunTimestamp', 0)
     db.set('nextRunTimestamp', timestamp)
-
-    client.start_scheduler()
 
     next_run_date = datetime.fromtimestamp(timestamp/1000, timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')
 
@@ -534,15 +543,19 @@ async def leaderboard_timer(interaction: discord.Interaction):
         await interaction.response.send_message('The auto-leaderboard is not yet set up.', ephemeral=True)
         return
 
-    now = int(datetime.now(timezone.utc).timestamp() * 1000)
-    next_run_timestamp = db.get('nextRunTimestamp', 0)
+    next_run_timestamp = db.get('nextRunTimestamp')
+    
+    if not next_run_timestamp:
+        await interaction.response.send_message('No scheduled run found. The bot will calculate on next check.', ephemeral=True)
+        return
 
-    if next_run_timestamp < now:
-        timestamp, _ = calculate_next_run_time()
-        db.set('nextRunTimestamp', timestamp)
-        next_run_timestamp = timestamp
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    
+    if now_ms >= next_run_timestamp:
+        await interaction.response.send_message('⏰ The leaderboard is overdue and should run on the next check cycle (within 30 seconds).', ephemeral=True)
+        return
 
-    delay = next_run_timestamp - now
+    delay = next_run_timestamp - now_ms
     total_seconds = delay // 1000
     days = total_seconds // (3600 * 24)
     hours = (total_seconds % (3600 * 24)) // 3600
@@ -694,9 +707,9 @@ async def shutdown(interaction: discord.Interaction):
 
     print(f'[ADMIN] Shutdown initiated by user ID: {interaction.user.id}')
 
-    if client.scheduler_task:
-        client.scheduler_task.cancel()
-        print('[SCHEDULER] Scheduler successfully cleared.')
+    if client.scheduler_checker.is_running():
+        client.scheduler_checker.cancel()
+        print('[SCHEDULER] Scheduler checker stopped.')
 
     db.close()
 
