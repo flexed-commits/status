@@ -330,44 +330,6 @@ class ContactFormButtons(discord.ui.View):
         modal = MarkInvalidModal(self.message_id, self.channel_id)
         await interaction.response.send_modal(modal)
 
-# ========================================
-# HTTP SERVER WITH BOTH HANDLERS
-# ========================================
-
-# Handler for Top.gg votes
-async def handle_topgg_vote(request):
-    """Handle Top.gg vote webhooks"""
-    try:
-        # Optional: Verify Top.gg authorization header
-        # auth = request.headers.get('Authorization')
-        # TOPGG_AUTH = os.getenv('TOPGG_WEBHOOK_AUTH')
-        # if TOPGG_AUTH and auth != TOPGG_AUTH:
-        #     return web.json_response({'error': 'Unauthorized'}, status=401)
-        
-        data = await request.json()
-        
-        user_id = data.get('user')
-        bot_id = data.get('bot')
-        vote_type = data.get('type', 'upvote')
-        is_weekend = data.get('isWeekend', False)
-        
-        print(f"🗳️  Vote received from user {user_id} (weekend: {is_weekend})")
-        
-        # TODO: Add your vote handling logic here
-        # Examples:
-        # - Send thank you DM to user
-        # - Give rewards
-        # - Log to database
-        # - Post in a channel
-        
-        return web.json_response({'success': True, 'message': 'Vote received'})
-        
-    except Exception as e:
-        print(f"❌ Top.gg vote error: {e}")
-        import traceback
-        traceback.print_exc()
-        return web.json_response({'error': str(e)}, status=500)
-
 # Handler for contact forms
 async def handle_contact_form(request):
     """Handle incoming contact form submissions from Netlify"""
@@ -444,24 +406,18 @@ async def handle_contact_form(request):
 async def start_http_server():
     """Start the HTTP server for receiving webhooks"""
     app = web.Application()
-    
-    # Add BOTH routes
+
+    # These two lines allow ONE ngrok URL to handle TWO different services
     app.router.add_post('/topgg', handle_topgg_vote)
     app.router.add_post('/contact', handle_contact_form)
-    
+
     runner = web.AppRunner(app)
     await runner.setup()
-    
+
     # Listen on port 8080
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
-    
-    print(f"\n{'='*60}")
-    print(f"🌐 HTTP server started on http://0.0.0.0:8080")
-    print(f"{'='*60}")
-    print(f"🗳️  Top.gg webhook: https://tamisha-dilatometric-lengthwise.ngrok-free.dev/topgg")
-    print(f"📧 Contact forms:  https://tamisha-dilatometric-lengthwise.ngrok-free.dev/contact")
-    print(f"{'='*60}\n")
+    print("🌐 HTTP server started on port 8080")
 
 # Commands
 @bot.tree.command(name="handler", description="Manage contact form handlers")
