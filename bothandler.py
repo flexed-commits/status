@@ -6,6 +6,8 @@ import sqlite3
 import asyncio
 import re
 from datetime import datetime
+from aiohttp import web
+import os
 
 # Bot setup
 intents = discord.Intents.default()
@@ -20,6 +22,8 @@ def init_db():
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS handlers
                  (user_id INTEGER PRIMARY KEY, username TEXT, added_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS config
+                 (key TEXT PRIMARY KEY, value TEXT)''')
     conn.commit()
     conn.close()
 
@@ -54,61 +58,22 @@ def get_all_handlers():
     conn.close()
     return handlers
 
-# Webhook management
-WEBHOOK_NAME = "flexedAI"
-WEBHOOK_AVATAR_URL = "https://cdn.discordapp.com/avatars/1081876265683927080/5856bc32a1943714f38d3d2c3fa8489d.webp?size=2048"
-webhook_url = None
+def set_contact_channel(channel_id):
+    """Store the contact form channel ID"""
+    conn = sqlite3.connect('handlers.db')
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO config VALUES ('contact_channel_id', ?)", (str(channel_id),))
+    conn.commit()
+    conn.close()
 
-async def get_webhook_by_name(channel, name):
-    """Get webhook by name"""
-    webhooks = await channel.webhooks()
-    for webhook in webhooks:
-        if webhook.name == name:
-            return webhook
-    return None
-
-async def create_or_get_webhook(channel):
-    """Create or get the flexedAI webhook in the specified channel"""
-    global webhook_url
-
-    webhooks = await channel.webhooks()
-
-    # Download avatar bytes first
-    async with aiohttp.ClientSession() as session:
-        async with session.get(WEBHOOK_AVATAR_URL) as resp:
-            if resp.status != 200:
-                print(f"⚠️  Failed to download webhook avatar: {resp.status}")
-                avatar_bytes = None
-            else:
-                avatar_bytes = await resp.read()
-                print(f"✅ Downloaded webhook avatar ({len(avatar_bytes)} bytes)")
-
-    # Check if webhook already exists
-    for webhook in webhooks:
-        if webhook.name == WEBHOOK_NAME:
-            webhook_url = webhook.url
-            print(f"📍 Found existing webhook: {webhook.name}")
-
-            # Update avatar if we have the bytes
-            if avatar_bytes:
-                try:
-                    await webhook.edit(avatar=avatar_bytes, reason="Updating webhook avatar")
-                    print(f"✅ Updated webhook avatar")
-                except Exception as e:
-                    print(f"⚠️  Failed to update webhook avatar: {e}")
-
-            return webhook
-
-    # Create new webhook
-    print(f"🆕 Creating new webhook: {WEBHOOK_NAME}")
-    webhook = await channel.create_webhook(
-        name=WEBHOOK_NAME,
-        avatar=avatar_bytes if avatar_bytes else None,
-        reason="Contact form webhook created by bot"
-    )
-    webhook_url = webhook.url
-    print(f"✅ Webhook created successfully")
-    return webhook
+def get_contact_channel():
+    """Get the contact form channel ID"""
+    conn = sqlite3.connect('handlers.db')
+    c = conn.cursor()
+    c.execute("SELECT value FROM config WHERE key = 'contact_channel_id'")
+    result = c.fetchone()
+    conn.close()
+    return int(result[0]) if result else None
 
 # Email validation
 def is_valid_email(email):
@@ -125,20 +90,19 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
         max_length=4000
     )
 
-    def __init__(self, user_email, webhook_message_id, channel_id):
+    def __init__(self, user_email, message_id, channel_id):
         super().__init__()
         self.user_email = user_email
-        self.webhook_message_id = webhook_message_id
+        self.message_id = message_id
         self.channel_id = channel_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        # CRITICAL FIX: Defer the response immediately to prevent timeout
         await interaction.response.defer(ephemeral=True)
         
         # Validate email
         if not is_valid_email(self.user_email):
             await interaction.followup.send(
-                "❌ Email is invalid. Failed to send reply. Message marked as invalid.",
+                "❌ Email is invalid. Failed to send reply.",
                 ephemeral=True
             )
             await self.mark_as_invalid(interaction, "Invalid email address")
@@ -188,14 +152,13 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
         """Update the embed to show reply was sent"""
         try:
             channel = bot.get_channel(self.channel_id)
-            webhook = await get_webhook_by_name(channel, WEBHOOK_NAME)
-
-            if webhook:
-                message = await webhook.fetch_message(self.webhook_message_id)
-                embed = message.embeds[0]
-                embed.color = discord.Color.green()
-                embed.set_footer(text=f"✅ Replied by {interaction.user.name}")
-                await webhook.edit_message(self.webhook_message_id, embed=embed, view=None)
+            message = await channel.fetch_message(self.message_id)
+            
+            embed = message.embeds[0]
+            embed.color = discord.Color.green()
+            embed.set_footer(text=f"✅ Replied by {interaction.user.name}")
+            
+            await message.edit(embed=embed, view=None)
         except Exception as e:
             print(f"Error updating embed: {e}")
 
@@ -203,14 +166,13 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
         """Mark embed as invalid"""
         try:
             channel = bot.get_channel(self.channel_id)
-            webhook = await get_webhook_by_name(channel, WEBHOOK_NAME)
-
-            if webhook:
-                message = await webhook.fetch_message(self.webhook_message_id)
-                embed = message.embeds[0]
-                embed.color = discord.Color.dark_gray()
-                embed.set_footer(text=f"❌ Invalid: {reason}")
-                await webhook.edit_message(self.webhook_message_id, embed=embed, view=None)
+            message = await channel.fetch_message(self.message_id)
+            
+            embed = message.embeds[0]
+            embed.color = discord.Color.dark_gray()
+            embed.set_footer(text=f"❌ Invalid: {reason}")
+            
+            await message.edit(embed=embed, view=None)
         except Exception as e:
             print(f"Error marking as invalid: {e}")
 
@@ -224,32 +186,32 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
         max_length=500
     )
 
-    def __init__(self, user_email, webhook_message_id, channel_id):
+    def __init__(self, user_email, message_id, channel_id):
         super().__init__()
         self.user_email = user_email
-        self.webhook_message_id = webhook_message_id
+        self.message_id = message_id
         self.channel_id = channel_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        # CRITICAL FIX: Defer the response immediately to prevent timeout
         await interaction.response.defer(ephemeral=True)
-        
-        success = await self.send_ignore_email(self.user_email, self.reason.value)
+
+        # Send ignore notification
+        success = await self.send_ignore_notification(self.user_email, self.reason.value)
 
         if success:
             await interaction.followup.send(
-                f"✅ Ignored message. Notification sent to {self.user_email}",
+                f"✅ Message ignored and notification sent to {self.user_email}",
                 ephemeral=True
             )
             await self.update_embed_ignored(interaction)
         else:
             await interaction.followup.send(
-                "❌ Failed to send ignore notification. Please check logs.",
+                "❌ Failed to send ignore notification.",
                 ephemeral=True
             )
 
-    async def send_ignore_email(self, to_email, reason):
-        """Send ignore notification email"""
+    async def send_ignore_notification(self, to_email, reason):
+        """Send ignore notification using Netlify function"""
         try:
             async with aiohttp.ClientSession() as session:
                 url = "https://flexedai.netlify.app/.netlify/functions/send-ignore"
@@ -264,49 +226,46 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
                         return True
                     else:
                         error_text = await resp.text()
-                        print(f"Ignore email failed: {resp.status} - {error_text}")
+                        print(f"Ignore notification failed: {resp.status} - {error_text}")
                         return False
         except asyncio.TimeoutError:
-            print("Error: Request timed out while sending ignore email")
+            print("Error: Request timed out while sending ignore notification")
             return False
         except Exception as e:
-            print(f"Error sending ignore email: {e}")
+            print(f"Error sending ignore notification: {e}")
             return False
 
     async def update_embed_ignored(self, interaction):
-        """Update the embed to show message was ignored"""
+        """Update embed to show message was ignored"""
         try:
             channel = bot.get_channel(self.channel_id)
-            webhook = await get_webhook_by_name(channel, WEBHOOK_NAME)
-
-            if webhook:
-                message = await webhook.fetch_message(self.webhook_message_id)
-                embed = message.embeds[0]
-                embed.color = discord.Color.orange()
-                embed.set_footer(text=f"🔕 Ignored by {interaction.user.name}")
-                await webhook.edit_message(self.webhook_message_id, embed=embed, view=None)
+            message = await channel.fetch_message(self.message_id)
+            
+            embed = message.embeds[0]
+            embed.color = discord.Color.orange()
+            embed.set_footer(text=f"🔕 Ignored by {interaction.user.name}: {self.reason.value}")
+            
+            await message.edit(embed=embed, view=None)
         except Exception as e:
             print(f"Error updating embed: {e}")
 
-# Modal for Mark as Invalid
+# Modal for Mark Invalid
 class MarkInvalidModal(discord.ui.Modal, title="Mark as Invalid"):
     reason = discord.ui.TextInput(
         label="Reason",
         style=discord.TextStyle.paragraph,
-        placeholder="Why is this message invalid? (spam, inappropriate, etc.)",
+        placeholder="Why is this message invalid?",
         required=True,
         max_length=500
     )
 
-    def __init__(self, webhook_message_id, channel_id):
+    def __init__(self, message_id, channel_id):
         super().__init__()
-        self.webhook_message_id = webhook_message_id
+        self.message_id = message_id
         self.channel_id = channel_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        # CRITICAL FIX: Defer the response immediately to prevent timeout
         await interaction.response.defer(ephemeral=True)
-        
         await self.mark_as_invalid(interaction, self.reason.value)
         await interaction.followup.send(
             "✅ Message marked as invalid.",
@@ -317,18 +276,17 @@ class MarkInvalidModal(discord.ui.Modal, title="Mark as Invalid"):
         """Mark embed as invalid"""
         try:
             channel = bot.get_channel(self.channel_id)
-            webhook = await get_webhook_by_name(channel, WEBHOOK_NAME)
-
-            if webhook:
-                message = await webhook.fetch_message(self.webhook_message_id)
-                embed = message.embeds[0]
-                embed.color = discord.Color.dark_gray()
-                embed.set_footer(text=f"❌ Invalid: {reason} (by {interaction.user.name})")
-                await webhook.edit_message(self.webhook_message_id, embed=embed, view=None)
+            message = await channel.fetch_message(self.message_id)
+            
+            embed = message.embeds[0]
+            embed.color = discord.Color.dark_gray()
+            embed.set_footer(text=f"❌ Invalid ({interaction.user.name}): {reason}")
+            
+            await message.edit(embed=embed, view=None)
         except Exception as e:
             print(f"Error marking as invalid: {e}")
 
-# Buttons View
+# Button View
 class ContactFormButtons(discord.ui.View):
     def __init__(self, user_email, message_id, channel_id):
         super().__init__(timeout=None)
@@ -336,7 +294,7 @@ class ContactFormButtons(discord.ui.View):
         self.message_id = message_id
         self.channel_id = channel_id
 
-    @discord.ui.button(label="Reply", style=discord.ButtonStyle.green, emoji="📧")
+    @discord.ui.button(label="Reply", style=discord.ButtonStyle.green, emoji="✉️")
     async def reply_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_handler(interaction.user.id):
             await interaction.response.send_message(
@@ -371,6 +329,139 @@ class ContactFormButtons(discord.ui.View):
 
         modal = MarkInvalidModal(self.message_id, self.channel_id)
         await interaction.response.send_modal(modal)
+
+# ========================================
+# HTTP SERVER WITH BOTH HANDLERS
+# ========================================
+
+# Handler for Top.gg votes
+async def handle_topgg_vote(request):
+    """Handle Top.gg vote webhooks"""
+    try:
+        # Optional: Verify Top.gg authorization header
+        # auth = request.headers.get('Authorization')
+        # TOPGG_AUTH = os.getenv('TOPGG_WEBHOOK_AUTH')
+        # if TOPGG_AUTH and auth != TOPGG_AUTH:
+        #     return web.json_response({'error': 'Unauthorized'}, status=401)
+        
+        data = await request.json()
+        
+        user_id = data.get('user')
+        bot_id = data.get('bot')
+        vote_type = data.get('type', 'upvote')
+        is_weekend = data.get('isWeekend', False)
+        
+        print(f"🗳️  Vote received from user {user_id} (weekend: {is_weekend})")
+        
+        # TODO: Add your vote handling logic here
+        # Examples:
+        # - Send thank you DM to user
+        # - Give rewards
+        # - Log to database
+        # - Post in a channel
+        
+        return web.json_response({'success': True, 'message': 'Vote received'})
+        
+    except Exception as e:
+        print(f"❌ Top.gg vote error: {e}")
+        import traceback
+        traceback.print_exc()
+        return web.json_response({'error': str(e)}, status=500)
+
+# Handler for contact forms
+async def handle_contact_form(request):
+    """Handle incoming contact form submissions from Netlify"""
+    try:
+        data = await request.json()
+        
+        email = data.get('email')
+        subject = data.get('subject')
+        message = data.get('message')
+        
+        if not email or not subject or not message:
+            return web.json_response(
+                {'error': 'Missing required fields'},
+                status=400
+            )
+        
+        # Get the configured contact channel
+        channel_id = get_contact_channel()
+        if not channel_id:
+            print("❌ No contact channel configured!")
+            return web.json_response(
+                {'error': 'Bot not configured properly. Run /setup-contact first.'},
+                status=500
+            )
+        
+        channel = bot.get_channel(channel_id)
+        if not channel:
+            print(f"❌ Channel {channel_id} not found!")
+            return web.json_response(
+                {'error': 'Channel not found'},
+                status=500
+            )
+        
+        # Create embed
+        embed = discord.Embed(
+            title="📧 New Contact Form Submission",
+            color=0x667eea,
+            timestamp=datetime.now()
+        )
+        embed.add_field(name="📨 From", value=email, inline=False)
+        embed.add_field(name="📋 Subject", value=subject, inline=False)
+        embed.add_field(
+            name="💬 Message",
+            value=message[:1024] if len(message) > 1024 else message,
+            inline=False
+        )
+        embed.set_footer(text="Contact Form • flexedAI")
+        
+        # BOT SENDS MESSAGE WITH BUTTONS DIRECTLY!
+        view = ContactFormButtons(email, 0, channel.id)
+        sent_message = await channel.send(embed=embed, view=view)
+        
+        # Update the view with the correct message ID
+        view.message_id = sent_message.id
+        await sent_message.edit(view=view)
+        
+        print(f"✅ Contact form sent with buttons for {email}")
+        
+        return web.json_response({
+            'success': True,
+            'message': 'Contact form submitted to Discord'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error handling contact form: {e}")
+        import traceback
+        traceback.print_exc()
+        return web.json_response(
+            {'error': str(e)},
+            status=500
+        )
+
+# Start HTTP server with BOTH routes
+async def start_http_server():
+    """Start the HTTP server for receiving webhooks"""
+    app = web.Application()
+    
+    # Add BOTH routes
+    app.router.add_post('/topgg', handle_topgg_vote)
+    app.router.add_post('/contact', handle_contact_form)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Listen on port 8080
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    
+    print(f"\n{'='*60}")
+    print(f"🌐 HTTP server started on http://0.0.0.0:8080")
+    print(f"{'='*60}")
+    print(f"🗳️  Top.gg webhook: https://tamisha-dilatometric-lengthwise.ngrok-free.dev/topgg")
+    print(f"📧 Contact forms:  https://tamisha-dilatometric-lengthwise.ngrok-free.dev/contact")
+    print(f"{'='*60}\n")
 
 # Commands
 @bot.tree.command(name="handler", description="Manage contact form handlers")
@@ -441,87 +532,32 @@ async def handler_command(
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="setup-webhook", description="Setup webhook in current channel")
-async def setup_webhook(interaction: discord.Interaction):
+@bot.tree.command(name="setup-contact", description="Setup contact form channel")
+async def setup_contact(interaction: discord.Interaction):
     app_info = await bot.application_info()
     if interaction.user.id != app_info.owner.id:
         await interaction.response.send_message(
-            "❌ Only the bot owner can setup webhooks.",
+            "❌ Only the bot owner can setup contact forms.",
             ephemeral=True
         )
         return
 
-    await interaction.response.defer(ephemeral=True)
-
-    webhook = await create_or_get_webhook(interaction.channel)
+    # Save channel ID
+    set_contact_channel(interaction.channel.id)
 
     embed = discord.Embed(
-        title="✅ Webhook Setup Complete",
-        description=f"Webhook **{WEBHOOK_NAME}** is ready in this channel!",
+        title="✅ Contact Form Setup Complete",
+        description=f"Contact forms will now be sent to this channel with buttons!",
         color=discord.Color.green()
     )
-    embed.add_field(name="Webhook URL", value=f"||{webhook.url}||", inline=False)
     embed.add_field(
-        name="📝 Next Steps",
-        value="1. Copy the webhook URL above\n2. Add it to your Netlify environment variables as `DISCORD_WEBHOOK_URL`\n3. Redeploy your Netlify site",
+        name="📝 Your Endpoint",
+        value="Add this to Netlify:\n`BOT_HTTP_ENDPOINT=https://tamisha-dilatometric-lengthwise.ngrok-free.dev/contact`",
         inline=False
     )
 
-    await interaction.followup.send(embed=embed, ephemeral=True)
-    print(f"\n{'='*60}")
-    print(f"🎉 Webhook created successfully!")
-    print(f"📍 Channel: #{interaction.channel.name}")
-    print(f"🔗 Webhook URL: {webhook.url}")
-    print(f"{'='*60}\n")
-
-@bot.event
-async def on_message(message):
-    # DON'T ignore webhook messages - we need to process them!
-    if message.author == bot.user and not message.webhook_id:
-        return
-
-    # Check if message is from webhook and has embeds
-    if message.webhook_id and message.embeds:
-        try:
-            embed = message.embeds[0]
-
-            # Check if this is a contact form submission
-            if embed.title and "Contact Form" in embed.title:
-                print(f"📧 Contact form detected in message {message.id}")
-
-                # Extract email from embed fields
-                email = None
-                for field in embed.fields:
-                    if field.name and "From" in field.name:
-                        email = field.value
-                        break
-
-                if email:
-                    print(f"📨 Email extracted: {email}")
-
-                    # Get the webhook to edit the message
-                    webhook = await get_webhook_by_name(message.channel, WEBHOOK_NAME)
-
-                    if webhook:
-                        # Add buttons using webhook.edit_message
-                        view = ContactFormButtons(email, message.id, message.channel.id)
-
-                        # Wait a moment for Discord to process
-                        await asyncio.sleep(0.5)
-
-                        await webhook.edit_message(message.id, view=view)
-                        print(f"✅ Buttons added to message {message.id}")
-                    else:
-                        print(f"⚠️  Could not find webhook {WEBHOOK_NAME}")
-                else:
-                    print(f"⚠️  Could not extract email from embed")
-        except Exception as e:
-            print(f"❌ Error adding buttons: {e}")
-            import traceback
-            traceback.print_exc()
-
-    # Process commands
-    await bot.process_commands(message)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+    print(f"\n✅ Contact channel configured: #{interaction.channel.name}")
 
 @bot.event
 async def on_ready():
@@ -533,6 +569,9 @@ async def on_ready():
     # Initialize database
     init_db()
 
+    # Start HTTP server
+    asyncio.create_task(start_http_server())
+
     # Sync commands
     try:
         synced = await bot.tree.sync()
@@ -540,16 +579,14 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
 
-    print(f"\n📋 Instructions:")
-    print(f"1. Use /setup-webhook in your desired channel")
-    print(f"2. Use /handler add @user to add handlers")
-    print(f"3. Add webhook URL to Netlify")
+    print(f"\n📋 Setup Instructions:")
+    print(f"1. Run /setup-contact in your desired Discord channel")
+    print(f"2. Run /handler add @user to add contact form handlers")
+    print(f"3. Add BOT_HTTP_ENDPOINT to Netlify environment variables")
     print(f"\n{'='*60}\n")
 
 # Run bot
 if __name__ == "__main__":
-    import os
-
     TOKEN = os.getenv("BOT_TOKEN1")
 
     if not TOKEN:
