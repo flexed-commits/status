@@ -236,14 +236,14 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
             return False
 
     async def update_embed_ignored(self, interaction):
-        """Update embed to show message was ignored"""
+        """Update the embed to show message was ignored"""
         try:
             channel = bot.get_channel(self.channel_id)
             message = await channel.fetch_message(self.message_id)
             
             embed = message.embeds[0]
             embed.color = discord.Color.orange()
-            embed.set_footer(text=f"🔕 Ignored by {interaction.user.name}: {self.reason.value}")
+            embed.set_footer(text=f"⚠️ Ignored by {interaction.user.name}")
             
             await message.edit(embed=embed, view=None)
         except Exception as e:
@@ -252,7 +252,7 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
 # Modal for Mark Invalid
 class MarkInvalidModal(discord.ui.Modal, title="Mark as Invalid"):
     reason = discord.ui.TextInput(
-        label="Reason",
+        label="Reason for Marking Invalid",
         style=discord.TextStyle.paragraph,
         placeholder="Why is this message invalid?",
         required=True,
@@ -266,9 +266,10 @@ class MarkInvalidModal(discord.ui.Modal, title="Mark as Invalid"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        
         await self.mark_as_invalid(interaction, self.reason.value)
         await interaction.followup.send(
-            "✅ Message marked as invalid.",
+            "✅ Message marked as invalid",
             ephemeral=True
         )
 
@@ -280,13 +281,13 @@ class MarkInvalidModal(discord.ui.Modal, title="Mark as Invalid"):
             
             embed = message.embeds[0]
             embed.color = discord.Color.dark_gray()
-            embed.set_footer(text=f"❌ Invalid ({interaction.user.name}): {reason}")
+            embed.set_footer(text=f"❌ Invalid: {reason} (by {interaction.user.name})")
             
             await message.edit(embed=embed, view=None)
         except Exception as e:
             print(f"Error marking as invalid: {e}")
 
-# Button View
+# Button view for contact forms
 class ContactFormButtons(discord.ui.View):
     def __init__(self, user_email, message_id, channel_id):
         super().__init__(timeout=None)
@@ -306,7 +307,7 @@ class ContactFormButtons(discord.ui.View):
         modal = ReplyModal(self.user_email, self.message_id, self.channel_id)
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label="Ignore", style=discord.ButtonStyle.gray, emoji="🔕")
+    @discord.ui.button(label="Ignore", style=discord.ButtonStyle.secondary, emoji="⏭️")
     async def ignore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_handler(interaction.user.id):
             await interaction.response.send_message(
@@ -318,7 +319,7 @@ class ContactFormButtons(discord.ui.View):
         modal = IgnoreModal(self.user_email, self.message_id, self.channel_id)
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label="Mark as Invalid", style=discord.ButtonStyle.red, emoji="❌")
+    @discord.ui.button(label="Mark Invalid", style=discord.ButtonStyle.danger, emoji="❌")
     async def invalid_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not is_handler(interaction.user.id):
             await interaction.response.send_message(
@@ -402,6 +403,24 @@ async def handle_contact_form(request):
             status=500
         )
 
+# Placeholder for Top.gg vote handler
+async def handle_topgg_vote(request):
+    """Handle incoming Top.gg votes"""
+    try:
+        data = await request.json()
+        print(f"📊 Received Top.gg vote: {data}")
+        
+        return web.json_response({
+            'success': True,
+            'message': 'Vote received'
+        })
+    except Exception as e:
+        print(f"❌ Error handling Top.gg vote: {e}")
+        return web.json_response(
+            {'error': str(e)},
+            status=500
+        )
+
 # Start HTTP server with BOTH routes
 async def start_http_server():
     """Start the HTTP server for receiving webhooks"""
@@ -418,6 +437,7 @@ async def start_http_server():
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
     print("🌐 HTTP server started on port 8080")
+    print("📡 Ready to receive contact forms at /contact endpoint")
 
 # Commands
 @bot.tree.command(name="handler", description="Manage contact form handlers")
@@ -508,7 +528,7 @@ async def setup_contact(interaction: discord.Interaction):
     )
     embed.add_field(
         name="📝 Your Endpoint",
-        value="Add this to Netlify:\n`BOT_HTTP_ENDPOINT=https://tamisha-dilatometric-lengthwise.ngrok-free.dev/contact`",
+        value="Add this to Netlify:\n`BOT_HTTP_ENDPOINT=https://YOUR-NGROK-URL.ngrok-free.app/contact`",
         inline=False
     )
 
@@ -525,8 +545,8 @@ async def on_ready():
     # Initialize database
     init_db()
 
-    # Start HTTP server
-    # asyncio.create_task(start_http_server())
+    # Start HTTP server - CRITICAL: This line is now UNCOMMENTED!
+    asyncio.create_task(start_http_server())
 
     # Sync commands
     try:
