@@ -112,9 +112,9 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
     reply_text = discord.ui.TextInput(
         label="Your Reply",
         style=discord.TextStyle.paragraph,
-        placeholder="Type your reply here (max 4096 characters)...",
+        placeholder="Type your reply here (max 4000 characters)...",
         required=True,
-        max_length=4096
+        max_length=4000  # Changed from 4096 to 4000
     )
     
     def __init__(self, user_email, webhook_message_id, channel_id):
