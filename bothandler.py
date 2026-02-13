@@ -526,7 +526,7 @@ async def on_ready():
     init_db()
 
     # Start HTTP server
-    asyncio.create_task(start_http_server())
+    # asyncio.create_task(start_http_server())
 
     # Sync commands
     try:
