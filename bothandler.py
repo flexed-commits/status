@@ -65,23 +65,41 @@ async def create_or_get_webhook(channel):
     
     webhooks = await channel.webhooks()
     
+    # Download avatar bytes first
+    async with aiohttp.ClientSession() as session:
+        async with session.get(WEBHOOK_AVATAR_URL) as resp:
+            if resp.status != 200:
+                print(f"⚠️  Failed to download webhook avatar: {resp.status}")
+                avatar_bytes = None
+            else:
+                avatar_bytes = await resp.read()
+                print(f"✅ Downloaded webhook avatar ({len(avatar_bytes)} bytes)")
+    
     # Check if webhook already exists
     for webhook in webhooks:
         if webhook.name == WEBHOOK_NAME:
             webhook_url = webhook.url
+            print(f"📍 Found existing webhook: {webhook.name}")
+            
+            # Update avatar if we have the bytes and avatar is different
+            if avatar_bytes:
+                try:
+                    await webhook.edit(avatar=avatar_bytes, reason="Updating webhook avatar")
+                    print(f"✅ Updated webhook avatar")
+                except Exception as e:
+                    print(f"⚠️  Failed to update webhook avatar: {e}")
+            
             return webhook
     
     # Create new webhook
-    async with aiohttp.ClientSession() as session:
-        async with session.get(WEBHOOK_AVATAR_URL) as resp:
-            avatar_bytes = await resp.read()
-    
+    print(f"🆕 Creating new webhook: {WEBHOOK_NAME}")
     webhook = await channel.create_webhook(
         name=WEBHOOK_NAME,
-        avatar=avatar_bytes,
+        avatar=avatar_bytes if avatar_bytes else None,
         reason="Contact form webhook created by bot"
     )
     webhook_url = webhook.url
+    print(f"✅ Webhook created successfully")
     return webhook
 
 # Email validation
@@ -135,9 +153,7 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
         """Send reply email using your Netlify function"""
         try:
             async with aiohttp.ClientSession() as session:
-                # IMPORTANT: Replace YOUR_NETLIFY_SITE with your actual Netlify site URL
-                # Example: https://flexedai.netlify.app or https://your-custom-domain.com
-                url = "https://YOUR_NETLIFY_SITE/.netlify/functions/send-reply"
+                url = "https://flexedai.netlify.app/.netlify/functions/send-reply"
                 
                 data = {
                     "to": to_email,
@@ -166,8 +182,8 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
             embed.color = discord.Color.green()
             embed.set_footer(text=f"✅ Replied by {interaction.user.name}")
             await message.edit(embed=embed, view=None)
-        except:
-            pass
+        except Exception as e:
+            print(f"Error updating embed: {e}")
     
     async def mark_as_invalid(self, interaction, reason):
         """Mark embed as invalid"""
@@ -177,8 +193,8 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
             embed.color = discord.Color.dark_gray()
             embed.set_footer(text=f"❌ Invalid: {reason}")
             await message.edit(embed=embed, view=None)
-        except:
-            pass
+        except Exception as e:
+            print(f"Error marking as invalid: {e}")
 
 # Modal for Ignore
 class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
@@ -216,9 +232,7 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
         """Send ignore notification email"""
         try:
             async with aiohttp.ClientSession() as session:
-                # IMPORTANT: Replace YOUR_NETLIFY_SITE with your actual Netlify site URL
-                # Example: https://flexedai.netlify.app or https://your-custom-domain.com
-                url = "https://YOUR_NETLIFY_SITE/.netlify/functions/send-ignore"
+                url = "https://flexedai.netlify.app/.netlify/functions/send-ignore"
                 
                 data = {
                     "to": to_email,
@@ -247,8 +261,8 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
             embed.color = discord.Color.orange()
             embed.set_footer(text=f"🔕 Ignored by {interaction.user.name}: {self.reason.value}")
             await message.edit(embed=embed, view=None)
-        except:
-            pass
+        except Exception as e:
+            print(f"Error updating ignored embed: {e}")
 
 # Modal for Mark as Invalid
 class MarkInvalidModal(discord.ui.Modal, title="Mark as Invalid"):
@@ -279,8 +293,8 @@ class MarkInvalidModal(discord.ui.Modal, title="Mark as Invalid"):
             embed.color = discord.Color.dark_gray()
             embed.set_footer(text=f"❌ Invalid: {self.reason.value}")
             await message.edit(embed=embed, view=None)
-        except:
-            pass
+        except Exception as e:
+            print(f"Error marking as invalid: {e}")
 
 # Button view for contact form messages
 class ContactFormButtons(discord.ui.View):
@@ -438,17 +452,34 @@ async def on_message(message):
     if message.author == bot.user:
         return
     
-    # Check if message is from webhook and contains contact form data
-    if message.webhook_id and "||EMAIL:" in message.content:
+    # Check if message is from webhook and has embeds with contact form title
+    if message.webhook_id and message.embeds:
         try:
-            # Extract email from hidden content
-            email_match = message.content.split("||EMAIL:")[1].split("||")[0]
+            embed = message.embeds[0]
             
-            # Add buttons to the webhook message
-            view = ContactFormButtons(email_match, message.id)
-            await message.edit(view=view)
+            # Check if this is a contact form submission
+            if embed.title and "Contact Form Submission" in embed.title:
+                print(f"📧 Detected contact form submission in message {message.id}")
+                
+                # Extract email from embed fields
+                email = None
+                for field in embed.fields:
+                    if field.name and "From" in field.name:
+                        email = field.value
+                        break
+                
+                if email:
+                    print(f"📨 Extracted email: {email}")
+                    # Add buttons to the webhook message
+                    view = ContactFormButtons(email, message.id)
+                    await message.edit(view=view)
+                    print(f"✅ Added buttons to message {message.id}")
+                else:
+                    print(f"⚠️  Could not extract email from embed")
         except Exception as e:
-            print(f"Error adding buttons to webhook message: {e}")
+            print(f"❌ Error adding buttons to webhook message: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Process commands
     await bot.process_commands(message)
@@ -481,10 +512,10 @@ if __name__ == "__main__":
     import os
     
     # Get token from environment or user input
-    TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+    TOKEN = os.getenv("BOT_TOKEN1")
     
     if not TOKEN:
-        print("\n⚠️  DISCORD_BOT_TOKEN not found in environment variables")
+        print("\n⚠️  BOT_TOKEN1 not found in environment variables")
         TOKEN = input("Please enter your Discord bot token: ").strip()
     
     if not TOKEN:
