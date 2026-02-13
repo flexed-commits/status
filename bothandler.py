@@ -81,7 +81,7 @@ async def create_or_get_webhook(channel):
             webhook_url = webhook.url
             print(f"📍 Found existing webhook: {webhook.name}")
             
-            # Update avatar if we have the bytes and avatar is different
+            # Update avatar if we have the bytes
             if avatar_bytes:
                 try:
                     await webhook.edit(avatar=avatar_bytes, reason="Updating webhook avatar")
@@ -129,7 +129,6 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
                 "❌ Email is invalid. Failed to send reply. Message marked as invalid.",
                 ephemeral=True
             )
-            # Mark embed as invalid
             await self.mark_as_invalid(interaction, "Invalid email address")
             return
         
@@ -141,7 +140,6 @@ class ReplyModal(discord.ui.Modal, title="Reply to Contact Form"):
                 f"✅ Reply sent successfully to {self.user_email}",
                 ephemeral=True
             )
-            # Update embed to show reply was sent
             await self.update_embed_replied(interaction)
         else:
             await interaction.response.send_message(
@@ -212,7 +210,6 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
         self.webhook_message_id = webhook_message_id
     
     async def on_submit(self, interaction: discord.Interaction):
-        # Send ignore email
         success = await self.send_ignore_email(self.user_email, self.reason.value)
         
         if success:
@@ -220,7 +217,6 @@ class IgnoreModal(discord.ui.Modal, title="Ignore Contact Form"):
                 f"✅ Ignore notification sent to {self.user_email}",
                 ephemeral=True
             )
-            # Update embed
             await self.update_embed_ignored(interaction)
         else:
             await interaction.response.send_message(
@@ -305,7 +301,6 @@ class ContactFormButtons(discord.ui.View):
     
     @discord.ui.button(label="Reply", style=discord.ButtonStyle.green, emoji="✉️")
     async def reply_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Check if user is a handler
         if not is_handler(interaction.user.id):
             await interaction.response.send_message(
                 "❌ You don't have permission to handle contact forms.",
@@ -318,7 +313,6 @@ class ContactFormButtons(discord.ui.View):
     
     @discord.ui.button(label="Ignore", style=discord.ButtonStyle.gray, emoji="🔕")
     async def ignore_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Check if user is a handler
         if not is_handler(interaction.user.id):
             await interaction.response.send_message(
                 "❌ You don't have permission to handle contact forms.",
@@ -331,7 +325,6 @@ class ContactFormButtons(discord.ui.View):
     
     @discord.ui.button(label="Mark as Invalid", style=discord.ButtonStyle.red, emoji="❌")
     async def invalid_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Check if user is a handler
         if not is_handler(interaction.user.id):
             await interaction.response.send_message(
                 "❌ You don't have permission to handle contact forms.",
@@ -358,7 +351,6 @@ async def handler_command(
     action: app_commands.Choice[str],
     user: discord.Member = None
 ):
-    # Check if user is the bot owner
     app_info = await bot.application_info()
     if interaction.user.id != app_info.owner.id:
         await interaction.response.send_message(
@@ -414,7 +406,6 @@ async def handler_command(
 
 @bot.tree.command(name="setup-webhook", description="Setup webhook in current channel")
 async def setup_webhook(interaction: discord.Interaction):
-    # Check if user is the bot owner
     app_info = await bot.application_info()
     if interaction.user.id != app_info.owner.id:
         await interaction.response.send_message(
@@ -448,38 +439,75 @@ async def setup_webhook(interaction: discord.Interaction):
 
 @bot.event
 async def on_message(message):
-    # Ignore messages from the bot itself
-    if message.author == bot.user:
+    print(f"\n{'='*60}")
+    print(f"📨 MESSAGE RECEIVED:")
+    print(f"  Author: {message.author}")
+    print(f"  Author ID: {message.author.id}")
+    print(f"  Bot user ID: {bot.user.id}")
+    print(f"  Is from bot: {message.author == bot.user}")
+    print(f"  Has webhook_id: {message.webhook_id}")
+    print(f"  Webhook ID: {message.webhook_id if message.webhook_id else 'None'}")
+    print(f"  Has embeds: {len(message.embeds) > 0}")
+    print(f"  Number of embeds: {len(message.embeds)}")
+    
+    if message.embeds:
+        for i, embed in enumerate(message.embeds):
+            print(f"  Embed {i}:")
+            print(f"    Title: {embed.title}")
+            print(f"    Description: {embed.description}")
+            print(f"    Fields: {len(embed.fields)}")
+            for field in embed.fields:
+                print(f"      Field: {field.name} = {field.value}")
+    print(f"{'='*60}\n")
+    
+    # DON'T ignore webhook messages - we need to process them!
+    # Only ignore if it's the bot itself sending regular messages
+    if message.author == bot.user and not message.webhook_id:
+        print("⏭️  Ignoring regular bot message")
         return
     
-    # Check if message is from webhook and has embeds with contact form title
+    # Check if message is from webhook and has embeds
     if message.webhook_id and message.embeds:
+        print("🔍 WEBHOOK MESSAGE DETECTED - Checking for contact form...")
         try:
             embed = message.embeds[0]
             
+            print(f"  Checking embed title: '{embed.title}'")
+            
             # Check if this is a contact form submission
-            if embed.title and "Contact Form Submission" in embed.title:
-                print(f"📧 Detected contact form submission in message {message.id}")
+            if embed.title and "Contact Form" in embed.title:
+                print(f"✅ CONTACT FORM DETECTED!")
                 
                 # Extract email from embed fields
                 email = None
                 for field in embed.fields:
+                    print(f"  Checking field: '{field.name}' = '{field.value}'")
                     if field.name and "From" in field.name:
                         email = field.value
+                        print(f"  📧 FOUND EMAIL: {email}")
                         break
                 
                 if email:
-                    print(f"📨 Extracted email: {email}")
+                    print(f"🎯 Adding buttons to message {message.id} for email {email}")
                     # Add buttons to the webhook message
                     view = ContactFormButtons(email, message.id)
+                    
+                    # Wait a moment for Discord to process the message
+                    await asyncio.sleep(0.5)
+                    
                     await message.edit(view=view)
-                    print(f"✅ Added buttons to message {message.id}")
+                    print(f"✅ BUTTONS ADDED SUCCESSFULLY!")
                 else:
                     print(f"⚠️  Could not extract email from embed")
+            else:
+                print(f"⏭️  Not a contact form (title: '{embed.title}')")
         except Exception as e:
-            print(f"❌ Error adding buttons to webhook message: {e}")
+            print(f"❌ ERROR adding buttons to webhook message:")
+            print(f"   {e}")
             import traceback
             traceback.print_exc()
+    else:
+        print(f"⏭️  Not a webhook message or no embeds")
     
     # Process commands
     await bot.process_commands(message)
@@ -488,6 +516,7 @@ async def on_message(message):
 async def on_ready():
     print(f"\n{'='*60}")
     print(f"🤖 Bot logged in as {bot.user}")
+    print(f"   Bot ID: {bot.user.id}")
     print(f"📊 Connected to {len(bot.guilds)} guild(s)")
     print(f"{'='*60}\n")
     
@@ -511,7 +540,6 @@ async def on_ready():
 if __name__ == "__main__":
     import os
     
-    # Get token from environment or user input
     TOKEN = os.getenv("BOT_TOKEN1")
     
     if not TOKEN:
